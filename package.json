@@ -1,0 +1,41 @@
+{
+  "name": "orqent",
+  "version": "1.0.0",
+  "description": "TUI con React + Ink + TypeScript",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "orqent": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/index.tsx",
+    "start": "tsx src/index.tsx",
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/index.tsx --format esm --target node20 --out-dir dist --clean",
+    "cli": "node dist/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ink": "^7.0.1",
+    "ink-text-input": "^6.0.0",
+    "meow": "^14.1.0",
+    "react": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@vitest/coverage-v8": "^4.1.5",
+    "tsup": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
