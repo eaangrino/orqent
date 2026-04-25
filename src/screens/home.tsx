@@ -342,9 +342,11 @@ export function HomeScreen({
 
       <Box marginTop={1} flexDirection="column" alignItems="center">
         <Text dimColor>
-          {state.isSubmitting
-            ? "Enviando..."
-            : (promptStatus ?? "Composer listo.")}
+          <Text dimColor>
+            {state.isSubmitting
+              ? (promptStatus ?? "Enviando...")
+              : (promptStatus ?? "Composer listo.")}
+          </Text>
         </Text>
         <Text dimColor>/ para comandos · ↑/↓ navegar · Enter ejecutar</Text>
       </Box>

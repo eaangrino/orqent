@@ -6,7 +6,7 @@ import { useOllamaModels } from "./models/ollama/use-ollama-models.js";
 import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_ORQENT_SYSTEM_PROMPT,
   compactChatHistoryWithOllama,
@@ -26,6 +26,7 @@ export function App() {
     footerLineBRightText,
     ollamaHost,
     selectedModel,
+    isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,
     handleSelectModel,
@@ -43,6 +44,7 @@ export function App() {
       : ollamaConnectionResult?.ok
         ? `Online${ollamaConnectionResult.version ? ` · v${ollamaConnectionResult.version}` : ""} · ${ollamaConnectionResult.latencyMs}ms`
         : `Offline${ollamaConnectionResult?.error ? ` · ${ollamaConnectionResult.error}` : ""}`;
+  const activeModel = useMemo(() => selectedModel.trim(), [selectedModel]);
 
   const [promptStatus, setPromptStatus] = useState<string | null>(null);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
@@ -83,13 +85,20 @@ export function App() {
       history: OllamaChatMessage[],
       onToken: (token: string) => void,
     ) => {
+      if (!isOllamaConfigHydrated) {
+        throw new Error("La configuración de Ollama todavía se está cargando.");
+      }
+
+      if (!activeModel) {
+        throw new Error("No hay modelo activo seleccionado. Usa /model.");
+      }
       setHasStartedConversation(true);
-      setPromptStatus("Generando respuesta...");
+      setPromptStatus(`Generando respuesta con ${activeModel}...`);
 
       await appendTranscriptEntry(sessionId, {
         role: "user",
         content: prompt,
-        model: selectedModel,
+        model: activeModel,
       });
 
       let effectiveSummary = contextSummary;
@@ -120,7 +129,7 @@ export function App() {
         if (messagesToCompact.length > 0) {
           effectiveSummary = await compactChatHistoryWithOllama({
             host: ollamaHost,
-            model: selectedModel,
+            model: activeModel,
             previousSummary: contextSummary,
             messages: messagesToCompact,
           });
@@ -133,7 +142,7 @@ export function App() {
           await appendTranscriptEntry(sessionId, {
             role: "system",
             content: effectiveSummary,
-            model: selectedModel,
+            model: activeModel,
             metadata: {
               type: "context_compaction",
               compactedMessages: messagesToCompact.length,
@@ -157,7 +166,7 @@ ${effectiveSummary}`
       try {
         const result = await streamChatFromOllama({
           host: ollamaHost,
-          model: selectedModel,
+          model: activeModel,
           messages: [
             {
               role: "system",
@@ -190,7 +199,7 @@ ${effectiveSummary}`
         await appendTranscriptEntry(sessionId, {
           role: "assistant",
           content: `Error: ${message}`,
-          model: selectedModel,
+          model: activeModel,
           metadata: {
             error: true,
           },
@@ -202,7 +211,8 @@ ${effectiveSummary}`
     },
     [
       ollamaHost,
-      selectedModel,
+      activeModel,
+      isOllamaConfigHydrated,
       sessionId,
       systemPrompt,
       contextSummary,
