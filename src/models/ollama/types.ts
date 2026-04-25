@@ -1,6 +1,16 @@
+export type OllamaGenerationOptions = {
+  temperature: number;
+  topP: number;
+  topK: number;
+  numCtx: number;
+  numPredict: number;
+  repeatPenalty: number;
+};
+
 export type OllamaConfig = {
   host: string;
   selectedModel: string | null;
+  generationOptions: OllamaGenerationOptions;
 };
 
 export type OllamaModelItem = {

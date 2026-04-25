@@ -1,4 +1,5 @@
 import { createOllamaClient } from "../models/ollama/client.js";
+import type { OllamaGenerationOptions } from "../models/ollama/types.js";
 
 export type SendPromptToOllamaInput = {
   host: string;
@@ -27,14 +28,33 @@ export type CompactChatHistoryInput = {
   model: string;
   previousSummary: string | null;
   messages: OllamaChatMessage[];
+  generationOptions?: OllamaGenerationOptions;
 };
 
 export type StreamChatFromOllamaInput = {
   host: string;
   model: string;
   messages: OllamaChatMessage[];
+  generationOptions?: OllamaGenerationOptions;
   onToken: (token: string) => void;
 };
+
+function toOllamaRequestOptions(
+  generationOptions: OllamaGenerationOptions | undefined,
+) {
+  if (!generationOptions) {
+    return undefined;
+  }
+
+  return {
+    temperature: generationOptions.temperature,
+    top_p: generationOptions.topP,
+    top_k: generationOptions.topK,
+    num_ctx: generationOptions.numCtx,
+    num_predict: generationOptions.numPredict,
+    repeat_penalty: generationOptions.repeatPenalty,
+  };
+}
 
 export async function sendPromptToOllama({
   host,
@@ -113,6 +133,7 @@ export async function streamChatFromOllama({
   host,
   model,
   messages,
+  generationOptions,
   onToken,
 }: StreamChatFromOllamaInput): Promise<SendPromptToOllamaResult> {
   if (!model.trim()) {
@@ -135,6 +156,7 @@ export async function streamChatFromOllama({
   const stream = await client.chat({
     model,
     messages: normalizedMessages,
+    options: toOllamaRequestOptions(generationOptions),
     stream: true,
   });
 
@@ -165,6 +187,7 @@ export async function compactChatHistoryWithOllama({
   model,
   previousSummary,
   messages,
+  generationOptions,
 }: CompactChatHistoryInput): Promise<string> {
   if (!model.trim()) {
     throw new Error("No hay modelo seleccionado.");
@@ -194,6 +217,7 @@ export async function compactChatHistoryWithOllama({
   const response = await client.chat({
     model,
     stream: false,
+    options: toOllamaRequestOptions(generationOptions),
     messages: [
       {
         role: "system",

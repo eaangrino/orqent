@@ -47,6 +47,10 @@ const slashCommands: SlashCommandItem[] = [
     description: "Ver modelos disponibles",
   },
   {
+    label: "/params",
+    description: "Configurar parámetros de generación",
+  },
+  {
     label: "/home",
     description: "Volver al inicio",
   },

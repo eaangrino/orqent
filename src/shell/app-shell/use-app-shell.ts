@@ -23,6 +23,9 @@ export function useAppShell() {
     DEFAULT_OLLAMA_CONFIG.selectedModel ?? "gemma4:e4b",
   );
   const [ ollamaHost, setOllamaHost ] = useState(DEFAULT_OLLAMA_CONFIG.host);
+  const [ generationOptions, setGenerationOptions ] = useState(
+    DEFAULT_OLLAMA_CONFIG.generationOptions,
+  );
   const [ isOllamaConfigHydrated, setIsOllamaConfigHydrated ] = useState(false);
 
   useEffect(() => {
@@ -39,6 +42,7 @@ export function useAppShell() {
       setSelectedModel(
         config.selectedModel ?? DEFAULT_OLLAMA_CONFIG.selectedModel ?? "gemma4:e4b",
       );
+      setGenerationOptions(config.generationOptions);
       setIsOllamaConfigHydrated(true);
     }
 
@@ -57,8 +61,9 @@ export function useAppShell() {
     void saveOllamaConfig({
       host: ollamaHost,
       selectedModel,
+      generationOptions,
     });
-  }, [ isOllamaConfigHydrated, ollamaHost, selectedModel ]);
+  }, [ isOllamaConfigHydrated, ollamaHost, selectedModel, generationOptions ]);
 
   const handleBackToHome = useCallback(() => {
     setActiveView("home");
@@ -82,6 +87,11 @@ export function useAppShell() {
 
       case "/model":
         setActiveView("model");
+        return true;
+
+      case "/params":
+      case "/parameters":
+        setActiveView("params");
         return true;
 
       case "/home":
@@ -113,6 +123,8 @@ export function useAppShell() {
     footerLineBRightText,
     ollamaHost,
     selectedModel,
+    generationOptions,
+    setGenerationOptions,
     isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,

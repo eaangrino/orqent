@@ -15,6 +15,7 @@ import {
   type OllamaChatMessage,
 } from "./runtime/index.js";
 import { appendTranscriptEntry, createSessionId } from "./sessions/index.js";
+import { GenerationOptionsScreen } from "./screens/generation-options.js";
 
 export function App() {
   // src/app.tsx
@@ -26,6 +27,8 @@ export function App() {
     footerLineBRightText,
     ollamaHost,
     selectedModel,
+    generationOptions,
+    setGenerationOptions,
     isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,
@@ -132,6 +135,7 @@ export function App() {
             model: activeModel,
             previousSummary: contextSummary,
             messages: messagesToCompact,
+            generationOptions,
           });
 
           effectiveCompactedHistoryLength = nextCompactedHistoryLength;
@@ -178,6 +182,7 @@ ${effectiveSummary}`
               content: prompt,
             },
           ],
+          generationOptions,
           onToken,
         });
 
@@ -217,6 +222,7 @@ ${effectiveSummary}`
       systemPrompt,
       contextSummary,
       compactedHistoryLength,
+      generationOptions,
     ],
   );
 
@@ -254,6 +260,13 @@ ${effectiveSummary}`
             isLoading={isLoading}
             error={error}
             onSelectModel={handleSelectModel}
+            onBack={handleBackToHome}
+          />
+        ) : null}
+        {activeView === "params" ? (
+          <GenerationOptionsScreen
+            generationOptions={generationOptions}
+            onChangeGenerationOptions={setGenerationOptions}
             onBack={handleBackToHome}
           />
         ) : null}
