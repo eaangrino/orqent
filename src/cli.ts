@@ -1,6 +1,10 @@
-import { readFile } from 'node:fs/promises';
-import meow from 'meow';
-import { getStateFilePath, resetState } from './lib/storage.js';
+import { readFile } from "node:fs/promises";
+import meow from "meow";
+import {
+  getOllamaConfigFilePath,
+  saveOllamaConfig,
+} from "./features/ollama/storage.js";
+import { DEFAULT_OLLAMA_CONFIG } from "./features/ollama/config.js";
 
 const helpText = `
   Usage
@@ -9,7 +13,7 @@ const helpText = `
   Options
     --help     Mostrar ayuda
     --version  Mostrar versión
-    --reset    Reiniciar el estado persistido
+    --reset    Reiniciar la configuración persistida
 
   Examples
     $ orqent
@@ -26,20 +30,24 @@ type CliDeps = {
 
 async function readPackageVersion() {
   try {
-    const packageJsonUrl = new URL('../package.json', import.meta.url);
-    const raw = await readFile(packageJsonUrl, 'utf8');
+    const packageJsonUrl = new URL("../package.json", import.meta.url);
+    const raw = await readFile(packageJsonUrl, "utf8");
     const parsed = JSON.parse(raw) as { version?: string };
 
-    return parsed.version?.trim() || '0.0.0';
+    return parsed.version?.trim() || "0.0.0";
   } catch {
-    return '0.0.0';
+    return "0.0.0";
   }
+}
+
+async function resetPersistedConfig() {
+  await saveOllamaConfig(DEFAULT_OLLAMA_CONFIG);
 }
 
 export async function runCli(deps: CliDeps = {}) {
   const argv = deps.argv ?? process.argv.slice(2);
   const packageVersion = deps.packageVersion ?? (await readPackageVersion());
-  const resetStateImpl = deps.resetStateImpl ?? resetState;
+  const resetStateImpl = deps.resetStateImpl ?? resetPersistedConfig;
   const logImpl = deps.logImpl ?? console.log;
 
   const cli = meow(helpText, {
@@ -49,15 +57,15 @@ export async function runCli(deps: CliDeps = {}) {
     autoVersion: false,
     flags: {
       help: {
-        type: 'boolean',
+        type: "boolean",
         default: false,
       },
       version: {
-        type: 'boolean',
+        type: "boolean",
         default: false,
       },
       reset: {
-        type: 'boolean',
+        type: "boolean",
         default: false,
       },
     },
@@ -75,7 +83,7 @@ export async function runCli(deps: CliDeps = {}) {
 
   if (cli.flags.reset) {
     await resetStateImpl();
-    logImpl(`Estado reiniciado: ${getStateFilePath()}`);
+    logImpl(`Configuración reiniciada: ${getOllamaConfigFilePath()}`);
     return;
   }
 
@@ -84,6 +92,6 @@ export async function runCli(deps: CliDeps = {}) {
     return;
   }
 
-  const { runApp } = await import('./run-app.js');
+  const { runApp } = await import("./run-app.js");
   runApp();
 }
