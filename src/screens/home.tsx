@@ -17,7 +17,10 @@ type HomeUiState = {
 
 type HomeScreenProps = {
   onSlashCommand: (command: string) => boolean;
-  onPromptSubmit: (prompt: string) => Promise<string>;
+  onPromptSubmit: (
+    prompt: string,
+    onToken: (token: string) => void,
+  ) => Promise<string>;
   promptStatus: string | null;
 };
 
@@ -171,24 +174,48 @@ export function HomeScreen({
       content: normalized,
     };
 
+    const assistantMessageId = createMessageId();
+
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+    };
+
     setState((current) => ({
       ...current,
       prompt: "",
       isSubmitting: true,
-      messages: [...current.messages, userMessage],
+      messages: [...current.messages, userMessage, assistantMessage],
     }));
 
-    void onPromptSubmit(normalized)
+    void onPromptSubmit(normalized, (token) => {
+      setState((current) => ({
+        ...current,
+        messages: current.messages.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                content: `${message.content}${token}`,
+              }
+            : message,
+        ),
+      }));
+    })
       .then((response) => {
-        const assistantMessage: ChatMessage = {
-          id: createMessageId(),
-          role: "assistant",
-          content: response.trim() || "(respuesta vacía)",
-        };
-
         setState((current) => ({
           ...current,
-          messages: [...current.messages, assistantMessage],
+          messages: current.messages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content:
+                    response.trim() ||
+                    message.content.trim() ||
+                    "(respuesta vacía)",
+                }
+              : message,
+          ),
         }));
       })
       .catch((error_) => {
@@ -197,15 +224,16 @@ export function HomeScreen({
             ? error_.message
             : "Error desconocido obteniendo respuesta de Ollama";
 
-        const assistantMessage: ChatMessage = {
-          id: createMessageId(),
-          role: "assistant",
-          content: `Error: ${message}`,
-        };
-
         setState((current) => ({
           ...current,
-          messages: [...current.messages, assistantMessage],
+          messages: current.messages.map((chatMessage) =>
+            chatMessage.id === assistantMessageId
+              ? {
+                  ...chatMessage,
+                  content: `Error: ${message}`,
+                }
+              : chatMessage,
+          ),
         }));
       })
       .finally(() => {

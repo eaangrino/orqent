@@ -11,6 +11,10 @@ export type SendPromptToOllamaResult = {
   response: string;
 };
 
+export type StreamPromptToOllamaInput = SendPromptToOllamaInput & {
+  onToken: (token: string) => void;
+};
+
 export async function sendPromptToOllama({
   host,
   model,
@@ -37,5 +41,49 @@ export async function sendPromptToOllama({
   return {
     model: result.model,
     response: result.response,
+  };
+}
+
+export async function streamPromptFromOllama({
+  host,
+  model,
+  prompt,
+  onToken,
+}: StreamPromptToOllamaInput): Promise<SendPromptToOllamaResult> {
+  const normalizedPrompt = prompt.trim();
+
+  if (!normalizedPrompt) {
+    throw new Error("El prompt no puede estar vacío.");
+  }
+
+  if (!model.trim()) {
+    throw new Error("No hay modelo seleccionado.");
+  }
+
+  const client = createOllamaClient(host);
+
+  const stream = await client.generate({
+    model,
+    prompt: normalizedPrompt,
+    stream: true,
+  });
+
+  let response = "";
+  let responseModel = model;
+
+  for await (const part of stream) {
+    if (part.model) {
+      responseModel = part.model;
+    }
+
+    if (part.response) {
+      response += part.response;
+      onToken(part.response);
+    }
+  }
+
+  return {
+    model: responseModel,
+    response,
   };
 }

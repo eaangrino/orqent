@@ -7,7 +7,7 @@ import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
 import { useCallback, useState } from "react";
-import { sendPromptToOllama } from "./runtime/index.js";
+import { streamPromptFromOllama } from "./runtime/index.js";
 
 export function App() {
   // src/app.tsx
@@ -41,15 +41,16 @@ export function App() {
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
 
   const handlePromptSubmit = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, onToken: (token: string) => void) => {
       setHasStartedConversation(true);
-      setPromptStatus("Enviando prompt a Ollama...");
+      setPromptStatus("Generando respuesta...");
 
       try {
-        const result = await sendPromptToOllama({
+        const result = await streamPromptFromOllama({
           host: ollamaHost,
           model: selectedModel,
           prompt,
+          onToken,
         });
 
         setPromptStatus("Respuesta recibida.");
@@ -59,9 +60,9 @@ export function App() {
         const message =
           error_ instanceof Error
             ? error_.message
-            : "Error desconocido enviando prompt a Ollama";
+            : "Error desconocido generando respuesta con Ollama";
 
-        setPromptStatus(`Error enviando prompt: ${message}`);
+        setPromptStatus(`Error generando respuesta: ${message}`);
         throw new Error(message);
       }
     },
