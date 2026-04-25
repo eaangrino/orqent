@@ -1,52 +1,72 @@
 import { type ReactNode } from "react";
-import { Box, Text } from "ink";
-import { Menu } from "./menu.js";
+import { Box, Text, useWindowSize } from "ink";
 
 type LayoutProps = {
-  title: string;
-  instructions: string;
-  menuItems: string[];
-  selectedIndex: number;
-  activeLabel: string;
-  footerHelp: readonly string[];
+  topLeftText: string;
+  topRightText: string;
+  footerLineA: string;
+  footerLineB: string;
+  footerLineBRightText: string;
   children: ReactNode;
 };
 
+const logoLines = [
+  "  ____   ____   ___  _____ _   _ _____",
+  " / __ \\ |  _ \\ / _ \\| ____| \\ | |_   _|",
+  "| |  | || |_) | | | |  _| |  \\| | | |",
+  "| |__| ||  _ <| |_| | |___| |\\  | | |",
+  " \\____/ |_| \\_\\\\__\\_\\_____|_| \\_| |_|",
+];
+
 export function Layout({
-  title,
-  instructions,
-  menuItems,
-  selectedIndex,
-  activeLabel,
-  footerHelp,
+  topLeftText,
+  topRightText,
+  footerLineA,
+  footerLineB,
+  footerLineBRightText,
   children,
 }: LayoutProps) {
+  const { columns, rows } = useWindowSize();
+
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box flexDirection="column" borderStyle="round" paddingX={1} paddingY={0}>
-        <Text color="green">{title}</Text>
-        <Text>{instructions}</Text>
-      </Box>
-
-      <Menu items={menuItems} selectedIndex={selectedIndex} />
-
-      <Box marginTop={1} borderStyle="round" paddingX={1}>
-        <Text>
-          Vista activa: <Text color="cyan">{activeLabel}</Text>
-        </Text>
+    <Box
+      flexDirection="column"
+      width={columns}
+      height={rows}
+      paddingX={2}
+      paddingY={1}>
+      <Box justifyContent="space-between">
+        <Text dimColor>{topLeftText}</Text>
+        <Text dimColor>{topRightText}</Text>
       </Box>
 
       <Box
-        marginTop={1}
+        flexGrow={1}
         flexDirection="column"
-        borderStyle="round"
-        paddingX={1}
-        paddingY={0}>
-        {children}
+        justifyContent="center"
+        alignItems="center">
+        <Text color="#FF8549" bold>
+          O R Q E N T
+        </Text>
+
+        {logoLines.map((line) => (
+          <Text key={line} color="#FF8549">
+            {line}
+          </Text>
+        ))}
+
+        <Box marginTop={1} flexDirection="column" alignItems="center">
+          {children}
+        </Box>
       </Box>
 
-      <Box marginTop={1}>
-        <Text dimColor>{footerHelp.join(" • ")}</Text>
+      <Box flexDirection="column">
+        <Text dimColor>{footerLineA}</Text>
+
+        <Box justifyContent="space-between">
+          <Text dimColor>{footerLineB}</Text>
+          <Text dimColor>{footerLineBRightText}</Text>
+        </Box>
       </Box>
     </Box>
   );

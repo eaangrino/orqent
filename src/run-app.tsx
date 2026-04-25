@@ -1,11 +1,10 @@
 import { render } from "ink";
 import { App } from "./app.js";
-import { AppProviders } from "./state/app-providers.js";
 
 export function runApp() {
-  render(
-    <AppProviders>
-      <App />
-    </AppProviders>,
-  );
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+  }
+
+  render(<App />);
 }

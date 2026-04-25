@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import meow from 'meow';
 import { getStateFilePath, resetState } from './lib/storage.js';
-import { runApp } from './run-app.js';
 
 const helpText = `
   Usage
@@ -20,7 +19,7 @@ const helpText = `
 type CliDeps = {
   argv?: string[];
   packageVersion?: string;
-  runAppImpl?: () => void;
+  runAppImpl?: () => void | Promise<void>;
   resetStateImpl?: () => Promise<void>;
   logImpl?: (message: string) => void;
 };
@@ -40,7 +39,6 @@ async function readPackageVersion() {
 export async function runCli(deps: CliDeps = {}) {
   const argv = deps.argv ?? process.argv.slice(2);
   const packageVersion = deps.packageVersion ?? (await readPackageVersion());
-  const runAppImpl = deps.runAppImpl ?? runApp;
   const resetStateImpl = deps.resetStateImpl ?? resetState;
   const logImpl = deps.logImpl ?? console.log;
 
@@ -81,5 +79,11 @@ export async function runCli(deps: CliDeps = {}) {
     return;
   }
 
-  runAppImpl();
+  if (deps.runAppImpl) {
+    await deps.runAppImpl();
+    return;
+  }
+
+  const { runApp } = await import('./run-app.js');
+  runApp();
 }

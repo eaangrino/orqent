@@ -1,34 +1,73 @@
+import { Box } from "ink";
 import { Layout } from "./components/layout.js";
-import { getAppViewModel } from "./app-view-model.js";
-import { useMenuNavigation } from "./hooks/use-menu-navigation.js";
-import { useScreenShortcuts } from "./hooks/use-screen-shortcuts.js";
-import { screens } from "./screens/index.js";
-import { useTasksUiStateContext } from "./state/tasks-ui-context.js";
+import { useAppShell } from "./features/app-shell/use-app-shell.js";
+import { useOllamaConnection } from "./features/ollama/use-ollama-connection.js";
+import { useOllamaModels } from "./features/ollama/use-ollama-models.js";
+import { ConfigSelectScreen } from "./screens/config-select.js";
+import { HomeScreen } from "./screens/home.js";
+import { ModelSelectScreen } from "./screens/model-select.js";
 
 export function App() {
-  const { selectedIndex, activeScreen } = useMenuNavigation();
-  const { isTaskComposerOpen, isTaskListFocused } = useTasksUiStateContext();
+  // src/app.tsx
 
-  useScreenShortcuts(activeScreen);
+  const {
+    activeView,
+    footerLineA,
+    footerLineB,
+    footerLineBRightText,
+    ollamaHost,
+    selectedModel,
+    handleBackToHome,
+    handleSelectEndpoint,
+    handleSelectModel,
+    handleSlashCommand,
+  } = useAppShell();
 
-  const menuItems = Object.values(screens).map((screen) => screen.label);
-  const ActiveComponent = screens[activeScreen].component;
+  const { models, isLoading, error } = useOllamaModels(ollamaHost);
 
-  const { instructions, footerHelp } = getAppViewModel({
-    activeScreen,
-    isTaskComposerOpen,
-    isTaskListFocused,
-  });
+  const { status: ollamaConnectionStatus, result: ollamaConnectionResult } =
+    useOllamaConnection(ollamaHost);
+
+  const ollamaConnectionLabel =
+    ollamaConnectionStatus === "checking"
+      ? "Conectando..."
+      : ollamaConnectionResult?.ok
+        ? `Online${ollamaConnectionResult.version ? ` · v${ollamaConnectionResult.version}` : ""} · ${ollamaConnectionResult.latencyMs}ms`
+        : `Offline${ollamaConnectionResult?.error ? ` · ${ollamaConnectionResult.error}` : ""}`;
 
   return (
+    // src/app.tsx
+
     <Layout
-      title="Orqent"
-      instructions={instructions}
-      menuItems={menuItems}
-      selectedIndex={selectedIndex}
-      activeLabel={screens[activeScreen].label}
-      footerHelp={footerHelp}>
-      <ActiveComponent />
+      topLeftText="soy izquierda"
+      topRightText={`vista: ${activeView}`}
+      footerLineA={footerLineA}
+      footerLineB={`${footerLineB} · ${ollamaConnectionLabel}`}
+      footerLineBRightText={footerLineBRightText}>
+      <Box width="100%" flexDirection="column" alignItems="center">
+        {activeView === "home" ? (
+          <HomeScreen onSlashCommand={handleSlashCommand} />
+        ) : null}
+
+        {activeView === "config" ? (
+          <ConfigSelectScreen
+            selectedOllamaHost={ollamaHost}
+            onSelectEndpoint={handleSelectEndpoint}
+            onBack={handleBackToHome}
+          />
+        ) : null}
+
+        {activeView === "model" ? (
+          <ModelSelectScreen
+            models={models}
+            selectedModel={selectedModel}
+            isLoading={isLoading}
+            error={error}
+            onSelectModel={handleSelectModel}
+            onBack={handleBackToHome}
+          />
+        ) : null}
+      </Box>
     </Layout>
   );
 }
