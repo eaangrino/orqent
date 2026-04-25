@@ -8,6 +8,7 @@ import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
 import { useCallback, useState } from "react";
 import { streamPromptFromOllama } from "./runtime/index.js";
+import { appendTranscriptEntry, createSessionId } from "./sessions/index.js";
 
 export function App() {
   // src/app.tsx
@@ -39,11 +40,18 @@ export function App() {
 
   const [promptStatus, setPromptStatus] = useState<string | null>(null);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
+  const [sessionId] = useState(() => createSessionId());
 
   const handlePromptSubmit = useCallback(
     async (prompt: string, onToken: (token: string) => void) => {
       setHasStartedConversation(true);
       setPromptStatus("Generando respuesta...");
+
+      await appendTranscriptEntry(sessionId, {
+        role: "user",
+        content: prompt,
+        model: selectedModel,
+      });
 
       try {
         const result = await streamPromptFromOllama({
@@ -51,6 +59,12 @@ export function App() {
           model: selectedModel,
           prompt,
           onToken,
+        });
+
+        await appendTranscriptEntry(sessionId, {
+          role: "assistant",
+          content: result.response,
+          model: result.model,
         });
 
         setPromptStatus("Respuesta recibida.");
@@ -62,11 +76,20 @@ export function App() {
             ? error_.message
             : "Error desconocido generando respuesta con Ollama";
 
+        await appendTranscriptEntry(sessionId, {
+          role: "assistant",
+          content: `Error: ${message}`,
+          model: selectedModel,
+          metadata: {
+            error: true,
+          },
+        });
+
         setPromptStatus(`Error generando respuesta: ${message}`);
         throw new Error(message);
       }
     },
-    [ollamaHost, selectedModel],
+    [ollamaHost, selectedModel, sessionId],
   );
 
   return (
