@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import TextInput from "ink-text-input";
 import { SelectableList } from "../components/selectable-list.js";
 import type { OllamaChatMessage } from "../runtime/index.js";
 
-type ChatMessage = {
+export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -13,10 +19,11 @@ type ChatMessage = {
 type HomeUiState = {
   prompt: string;
   isSubmitting: boolean;
-  messages: ChatMessage[];
 };
 
 type HomeScreenProps = {
+  messages: ChatMessage[];
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   onSlashCommand: (command: string) => boolean;
   onPromptSubmit: (
     prompt: string,
@@ -34,7 +41,6 @@ type SlashCommandItem = {
 const initialState: HomeUiState = {
   prompt: "",
   isSubmitting: false,
-  messages: [],
 };
 
 const slashCommands: SlashCommandItem[] = [
@@ -68,6 +74,8 @@ function toOllamaChatHistory(messages: ChatMessage[]): OllamaChatMessage[] {
 }
 
 export function HomeScreen({
+  messages,
+  setMessages,
   onSlashCommand,
   onPromptSubmit,
   promptStatus,
@@ -199,15 +207,15 @@ export function HomeScreen({
       ...current,
       prompt: "",
       isSubmitting: true,
-      messages: [...current.messages, userMessage, assistantMessage],
     }));
 
-    const chatHistory = toOllamaChatHistory(state.messages);
+    setMessages((current) => [...current, userMessage, assistantMessage]);
+
+    const chatHistory = toOllamaChatHistory(messages);
 
     void onPromptSubmit(normalized, chatHistory, (token) => {
-      setState((current) => ({
-        ...current,
-        messages: current.messages.map((message) =>
+      setMessages((current) =>
+        current.map((message) =>
           message.id === assistantMessageId
             ? {
                 ...message,
@@ -215,12 +223,11 @@ export function HomeScreen({
               }
             : message,
         ),
-      }));
+      );
     })
       .then((response) => {
-        setState((current) => ({
-          ...current,
-          messages: current.messages.map((message) =>
+        setMessages((current) =>
+          current.map((message) =>
             message.id === assistantMessageId
               ? {
                   ...message,
@@ -231,7 +238,7 @@ export function HomeScreen({
                 }
               : message,
           ),
-        }));
+        );
       })
       .catch((error_) => {
         const message =
@@ -239,9 +246,8 @@ export function HomeScreen({
             ? error_.message
             : "Error desconocido obteniendo respuesta de Ollama";
 
-        setState((current) => ({
-          ...current,
-          messages: current.messages.map((chatMessage) =>
+        setMessages((current) =>
+          current.map((chatMessage) =>
             chatMessage.id === assistantMessageId
               ? {
                   ...chatMessage,
@@ -249,7 +255,7 @@ export function HomeScreen({
                 }
               : chatMessage,
           ),
-        }));
+        );
       })
       .finally(() => {
         setState((current) => ({
@@ -263,7 +269,7 @@ export function HomeScreen({
 
   return (
     <Box flexDirection="column" alignItems="center" width="100%">
-      {state.messages.length > 0 ? (
+      {messages.length > 0 ? (
         <Box
           width={inputWidth}
           flexDirection="column"
@@ -272,7 +278,7 @@ export function HomeScreen({
           borderColor="gray"
           paddingX={1}
           paddingY={1}>
-          {state.messages.map((message) => {
+          {messages.map((message) => {
             const isUser = message.role === "user";
 
             return (

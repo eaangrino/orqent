@@ -4,7 +4,7 @@ import { useAppShell } from "./shell/app-shell/use-app-shell.js";
 import { useOllamaConnection } from "./models/ollama/use-ollama-connection.js";
 import { useOllamaModels } from "./models/ollama/use-ollama-models.js";
 import { ConfigSelectScreen } from "./screens/config-select.js";
-import { HomeScreen } from "./screens/home.js";
+import { HomeScreen, type ChatMessage } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -52,6 +52,7 @@ export function App() {
   const [promptStatus, setPromptStatus] = useState<string | null>(null);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
   const [sessionId] = useState(() => createSessionId());
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [systemPrompt, setSystemPrompt] = useState(
     DEFAULT_ORQENT_SYSTEM_PROMPT,
@@ -81,6 +82,32 @@ export function App() {
       isCancelled = true;
     };
   }, []);
+
+  const handleModelSwitch = useCallback(
+    (nextModel: string) => {
+      const previousModel = activeModel;
+
+      handleSelectModel(nextModel);
+
+      if (previousModel === nextModel) {
+        return;
+      }
+
+      setPromptStatus(`Modelo cambiado: ${previousModel} → ${nextModel}`);
+
+      void appendTranscriptEntry(sessionId, {
+        role: "system",
+        content: `Model switched from ${previousModel} to ${nextModel}.`,
+        model: nextModel,
+        metadata: {
+          type: "model_switch",
+          previousModel,
+          nextModel,
+        },
+      });
+    },
+    [activeModel, handleSelectModel, sessionId],
+  );
 
   const handlePromptSubmit = useCallback(
     async (
@@ -239,6 +266,8 @@ ${effectiveSummary}`
       <Box width="100%" flexDirection="column" alignItems="center">
         {activeView === "home" ? (
           <HomeScreen
+            messages={messages}
+            setMessages={setMessages}
             onSlashCommand={handleSlashCommand}
             onPromptSubmit={handlePromptSubmit}
             promptStatus={promptStatus}
@@ -259,7 +288,7 @@ ${effectiveSummary}`
             selectedModel={selectedModel}
             isLoading={isLoading}
             error={error}
-            onSelectModel={handleSelectModel}
+            onSelectModel={handleModelSwitch}
             onBack={handleBackToHome}
           />
         ) : null}
