@@ -188,7 +188,7 @@ export async function compactChatHistoryWithOllama({
     .join("\n\n");
 
   const previousSummarySection = previousSummary
-    ? `Resumen previo:\n${previousSummary}\n\n`
+    ? `Preview summary:\n${previousSummary}\n\n`
     : "";
 
   const response = await client.chat({
