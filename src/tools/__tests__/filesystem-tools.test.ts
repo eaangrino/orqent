@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -61,7 +61,7 @@ describe("filesystem tools", () => {
     await writeFile(join(tempDir, "visible.txt"), "visible", "utf8");
     await writeFile(join(tempDir, ".hidden.txt"), "hidden", "utf8");
 
-    const registry = createToolRegistry([filesystemListTool]);
+    const registry = createToolRegistry([ filesystemListTool ]);
 
     const result = await executeTool({
       registry,
@@ -87,7 +87,7 @@ describe("filesystem tools", () => {
   it("filesystem.read lee un archivo y respeta maxBytes", async () => {
     await writeFile(join(tempDir, "readme.txt"), "abcdef", "utf8");
 
-    const registry = createToolRegistry([filesystemReadTool]);
+    const registry = createToolRegistry([ filesystemReadTool ]);
 
     const result = await executeTool({
       registry,
@@ -108,7 +108,7 @@ describe("filesystem tools", () => {
   });
 
   it("filesystem.write queda bloqueada sin confirmación", async () => {
-    const registry = createToolRegistry([filesystemWriteTool]);
+    const registry = createToolRegistry([ filesystemWriteTool ]);
 
     const result = await executeTool({
       registry,
@@ -127,7 +127,7 @@ describe("filesystem tools", () => {
   });
 
   it("filesystem.write escribe archivo cuando hay confirmación", async () => {
-    const registry = createToolRegistry([filesystemWriteTool]);
+    const registry = createToolRegistry([ filesystemWriteTool ]);
 
     const result = await executeTool({
       registry,
@@ -160,7 +160,7 @@ describe("filesystem tools", () => {
   it("filesystem.write rechaza sobrescritura sin overwrite=true", async () => {
     await writeFile(join(tempDir, "existing.txt"), "original", "utf8");
 
-    const registry = createToolRegistry([filesystemWriteTool]);
+    const registry = createToolRegistry([ filesystemWriteTool ]);
 
     const result = await executeTool({
       registry,
@@ -192,7 +192,7 @@ describe("filesystem tools", () => {
     );
     await writeFile(join(tempDir, "ignored.txt"), "sin match", "utf8");
 
-    const registry = createToolRegistry([projectSearchTool]);
+    const registry = createToolRegistry([ projectSearchTool ]);
 
     const result = await executeTool({
       registry,
@@ -209,8 +209,130 @@ describe("filesystem tools", () => {
 
     expect(result.result.scannedFiles).toBeGreaterThanOrEqual(1);
     expect(result.result.matches).toHaveLength(1);
-    expect(result.result.matches[0]?.relativePath).toBe("source.ts");
-    expect(result.result.matches[0]?.line).toBe(1);
-    expect(result.result.matches[0]?.preview).toContain("Hola Orqent");
+    expect(result.result.matches[ 0 ]?.relativePath).toBe("source.ts");
+    expect(result.result.matches[ 0 ]?.line).toBe(1);
+    expect(result.result.matches[ 0 ]?.preview).toContain("Hola Orqent");
+  });
+
+  it("filesystem.read bloquea paths fuera del cwd", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "orqent-outside-test-"));
+    const outsideFile = join(outsideDir, "secret.txt");
+
+    await writeFile(outsideFile, "secret", "utf8");
+
+    const registry = createToolRegistry([ filesystemReadTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "filesystem.read",
+      input: {
+        path: outsideFile,
+      },
+      sessionId: "session-test",
+      cwd: tempDir,
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("filesystem_path_outside_cwd");
+
+    await rm(outsideDir, {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it("filesystem.write bloquea escritura fuera del cwd", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "orqent-outside-test-"));
+    const outsideFile = join(outsideDir, "output.txt");
+
+    const registry = createToolRegistry([ filesystemWriteTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "filesystem.write",
+      input: {
+        path: outsideFile,
+        content: "no escribir",
+      },
+      sessionId: "session-test",
+      cwd: tempDir,
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("filesystem_path_outside_cwd");
+
+    await expect(readFile(outsideFile, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await rm(outsideDir, {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it("project.search bloquea roots fuera del cwd", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "orqent-outside-test-"));
+
+    const registry = createToolRegistry([ projectSearchTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "project.search",
+      input: {
+        query: "secret",
+        path: outsideDir,
+      },
+      sessionId: "session-test",
+      cwd: tempDir,
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("filesystem_path_outside_cwd");
+
+    await rm(outsideDir, {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it("filesystem.write bloquea escritura a través de symlink fuera del cwd", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "orqent-outside-test-"));
+    const linkPath = join(tempDir, "outside-link");
+    const outsideFile = join(outsideDir, "nested", "output.txt");
+
+    await symlink(outsideDir, linkPath, "dir");
+
+    const registry = createToolRegistry([ filesystemWriteTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "filesystem.write",
+      input: {
+        path: "outside-link/nested/output.txt",
+        content: "no escribir",
+        createDirectories: true,
+      },
+      sessionId: "session-test",
+      cwd: tempDir,
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("filesystem_path_outside_cwd");
+
+    await expect(readFile(outsideFile, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await rm(outsideDir, {
+      recursive: true,
+      force: true,
+    });
   });
 });

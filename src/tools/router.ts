@@ -1,7 +1,15 @@
 import { realpathSync } from "node:fs";
 import { ToolRegistry } from "./registry.js";
+import {
+  createDefaultPermissionPolicy,
+  evaluateToolPermission,
+  type PermissionEffect,
+  type PermissionPolicy,
+} from "../security/index.js";
 import type {
+  ToolActionLogger,
   ToolConfirmationHandler,
+  ToolConfirmationOutcome,
   ToolDefinition,
   ToolExecutionContext,
   ToolExecutionResult,
@@ -16,7 +24,9 @@ export type ExecuteToolInput = {
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  permissionPolicy?: PermissionPolicy;
   confirmToolExecution?: ToolConfirmationHandler;
+  toolActionLogger?: ToolActionLogger;
 };
 
 const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
@@ -170,55 +180,189 @@ function canRetryResult(
   return Boolean(retryConfig.retryableErrorCodes?.includes(result.error.code));
 }
 
-function getConfirmationReason(tool: ToolDefinition): string {
-  if (tool.requiresConfirmation) {
-    return `Tool "${tool.name}" requires explicit confirmation.`;
+type ToolPermissionDecision = {
+  error: ToolExecutionResult | null;
+  effect: PermissionEffect;
+  reason: string;
+  confirmation: ToolConfirmationOutcome;
+};
+
+function sanitizeToolInput(input: unknown): unknown {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    Array.isArray(input)
+  ) {
+    return input;
   }
 
-  if (tool.risk === "high" || tool.risk === "critical") {
-    return `Tool "${tool.name}" has ${tool.risk} risk.`;
+  const copy: Record<string, unknown> = {
+    ...(input as Record<string, unknown>),
+  };
+
+  if (typeof copy.content === "string") {
+    copy.content = `[redacted ${Buffer.byteLength(copy.content, "utf8")} bytes]`;
   }
 
-  if (!tool.isReadOnly) {
-    return `Tool "${tool.name}" can modify external state.`;
+  if (typeof copy.stdin === "string") {
+    copy.stdin = `[redacted ${Buffer.byteLength(copy.stdin, "utf8")} bytes]`;
   }
 
-  return `Tool "${tool.name}" can execute with current permissions.`;
+  return copy;
 }
 
-function shouldRequireConfirmation(tool: ToolDefinition): boolean {
-  return (
-    tool.requiresConfirmation ||
-    tool.risk === "high" ||
-    tool.risk === "critical" ||
-    !tool.isReadOnly
-  );
+function getResultError(result: ToolExecutionResult): {
+  errorCode?: string;
+  errorMessage?: string;
+} {
+  if (result.ok) {
+    return {};
+  }
+
+  return {
+    errorCode: result.error.code,
+    errorMessage: result.error.message,
+  };
 }
 
-async function ensureToolConfirmed({
+async function logToolAction({
+  logger,
+  sessionId,
+  tool,
+  toolName,
+  cwd,
+  input,
+  result,
+  startedAt,
+  status,
+  permissionEffect,
+  permissionReason,
+  confirmation,
+}: {
+  logger: ToolActionLogger | undefined;
+  sessionId: string;
+  tool?: ToolDefinition;
+  toolName: string;
+  cwd: string;
+  input: unknown;
+  result: ToolExecutionResult;
+  startedAt: number;
+  status: Parameters<ToolActionLogger>[ 0 ][ "status" ];
+  permissionEffect?: PermissionEffect;
+  permissionReason?: string;
+  confirmation?: ToolConfirmationOutcome;
+}): Promise<void> {
+  if (!logger) {
+    return;
+  }
+
+  const error = getResultError(result);
+
+  try {
+    await logger({
+      sessionId,
+      toolName,
+      cwd,
+      input: sanitizeToolInput(input),
+      status,
+      ok: result.ok,
+      durationMs: Date.now() - startedAt,
+      risk: tool?.risk,
+      permissions: tool?.permissions,
+      requiresConfirmation: tool?.requiresConfirmation,
+      isReadOnly: tool?.isReadOnly,
+      permissionEffect,
+      permissionReason,
+      confirmation,
+      ...error,
+      metadata: result.metadata,
+    });
+  } catch {
+    // Audit logging must never break tool execution.
+  }
+}
+
+function applyExecutionProfile(
+  tool: ToolDefinition,
+  input: unknown,
+): ToolDefinition {
+  const profile = tool.getExecutionProfile?.(input as never);
+
+  if (!profile) {
+    return tool;
+  }
+
+  return {
+    ...tool,
+    risk: profile.risk ?? tool.risk,
+    permissions: profile.permissions ?? tool.permissions,
+    requiresConfirmation:
+      profile.requiresConfirmation ?? tool.requiresConfirmation,
+    isReadOnly: profile.isReadOnly ?? tool.isReadOnly,
+  };
+}
+
+async function ensureToolPermitted({
   tool,
   input,
+  permissionPolicy,
   confirmToolExecution,
 }: {
   tool: ToolDefinition;
   input: unknown;
+  permissionPolicy: PermissionPolicy | undefined;
   confirmToolExecution: ToolConfirmationHandler | undefined;
-}): Promise<ToolExecutionResult | null> {
-  if (!shouldRequireConfirmation(tool)) {
-    return null;
+}): Promise<ToolPermissionDecision> {
+  const evaluation = evaluateToolPermission({
+    policy: permissionPolicy ?? createDefaultPermissionPolicy("ask"),
+    tool,
+  });
+
+  if (evaluation.effect === "allow") {
+    return {
+      error: null,
+      effect: evaluation.effect,
+      reason: evaluation.reason,
+      confirmation: "not_required",
+    };
+  }
+
+  if (evaluation.effect === "deny") {
+    return {
+      error: createToolError(
+        "tool_permission_denied",
+        evaluation.reason,
+        {
+          risk: tool.risk,
+          permissions: tool.permissions,
+          isReadOnly: tool.isReadOnly,
+          requiresConfirmation: tool.requiresConfirmation,
+          matchedRule: evaluation.matchedRule ?? null,
+        },
+      ),
+      effect: evaluation.effect,
+      reason: evaluation.reason,
+      confirmation: "not_required",
+    };
   }
 
   if (!confirmToolExecution) {
-    return createToolError(
-      "tool_confirmation_required",
-      `Tool "${tool.name}" requires confirmation before execution.`,
-      {
-        risk: tool.risk,
-        permissions: tool.permissions,
-        isReadOnly: tool.isReadOnly,
-        requiresConfirmation: tool.requiresConfirmation,
-      },
-    );
+    return {
+      error: createToolError(
+        "tool_confirmation_required",
+        evaluation.reason,
+        {
+          risk: tool.risk,
+          permissions: tool.permissions,
+          isReadOnly: tool.isReadOnly,
+          requiresConfirmation: tool.requiresConfirmation,
+          matchedRule: evaluation.matchedRule ?? null,
+        },
+      ),
+      effect: evaluation.effect,
+      reason: evaluation.reason,
+      confirmation: "missing",
+    };
   }
 
   const decision = await confirmToolExecution({
@@ -226,17 +370,27 @@ async function ensureToolConfirmed({
     input,
     risk: tool.risk,
     permissions: tool.permissions,
-    reason: getConfirmationReason(tool),
+    reason: evaluation.reason,
   });
 
   if (!decision.allowed) {
-    return createToolError(
-      "tool_confirmation_denied",
-      decision.reason ?? `Execution of tool "${tool.name}" was denied.`,
-    );
+    return {
+      error: createToolError(
+        "tool_confirmation_denied",
+        decision.reason ?? `Execution of tool "${tool.name}" was denied.`,
+      ),
+      effect: evaluation.effect,
+      reason: evaluation.reason,
+      confirmation: "denied",
+    };
   }
 
-  return null;
+  return {
+    error: null,
+    effect: evaluation.effect,
+    reason: evaluation.reason,
+    confirmation: "allowed",
+  };
 }
 
 async function executeToolWithRetries({
@@ -328,33 +482,90 @@ export async function executeTool({
   cwd,
   timeoutMs,
   signal,
+  permissionPolicy,
   confirmToolExecution,
+  toolActionLogger,
 }: ExecuteToolInput): Promise<ToolExecutionResult> {
+  const startedAt = Date.now();
+  const resolvedCwd = resolveCwd(cwd);
   const tool = registry.get(toolName);
 
   if (!tool) {
-    return createToolError(
+    const result = createToolError(
       "tool_not_found",
       `Tool "${toolName}" is not registered.`,
     );
+
+    await logToolAction({
+      logger: toolActionLogger,
+      sessionId,
+      toolName,
+      cwd: resolvedCwd,
+      input,
+      result,
+      startedAt,
+      status: "tool_not_found",
+    });
+
+    return result;
   }
 
   const validation = tool.validateInput?.(input);
 
   if (validation?.ok === false) {
-    return createToolError("invalid_tool_input", validation.error);
+    const result = createToolError("invalid_tool_input", validation.error);
+
+    await logToolAction({
+      logger: toolActionLogger,
+      sessionId,
+      tool,
+      toolName: tool.name,
+      cwd: resolvedCwd,
+      input,
+      result,
+      startedAt,
+      status: "invalid_input",
+    });
+
+    return result;
   }
 
   const validatedInput = validation?.ok ? validation.input : input;
+  const effectiveTool = applyExecutionProfile(tool, validatedInput);
 
-  const confirmationError = await ensureToolConfirmed({
-    tool,
+  const permissionDecision = await ensureToolPermitted({
+    tool: effectiveTool,
     input: validatedInput,
+    permissionPolicy,
     confirmToolExecution,
   });
 
-  if (confirmationError) {
-    return confirmationError;
+  if (permissionDecision.error) {
+    const status =
+      permissionDecision.error.ok
+        ? "executed"
+        : permissionDecision.error.error.code === "tool_permission_denied"
+          ? "permission_denied"
+          : permissionDecision.error.error.code === "tool_confirmation_required"
+            ? "confirmation_required"
+            : "confirmation_denied";
+
+    await logToolAction({
+      logger: toolActionLogger,
+      sessionId,
+      tool: effectiveTool,
+      toolName: effectiveTool.name,
+      cwd: resolvedCwd,
+      input: validatedInput,
+      result: permissionDecision.error,
+      startedAt,
+      status,
+      permissionEffect: permissionDecision.effect,
+      permissionReason: permissionDecision.reason,
+      confirmation: permissionDecision.confirmation,
+    });
+
+    return permissionDecision.error;
   }
 
   const resolvedTimeoutMs = getExecutionTimeoutMs(tool, timeoutMs);
@@ -362,16 +573,33 @@ export async function executeTool({
 
   const context: ToolExecutionContext = {
     sessionId,
-    cwd: resolveCwd(cwd),
+    cwd: resolvedCwd,
     signal: timeoutSignal.signal,
   };
 
   try {
-    return await executeToolWithRetries({
-      tool,
+    const result = await executeToolWithRetries({
+      tool: effectiveTool,
       input: validatedInput,
       context,
     });
+
+    await logToolAction({
+      logger: toolActionLogger,
+      sessionId,
+      tool: effectiveTool,
+      toolName: effectiveTool.name,
+      cwd: resolvedCwd,
+      input: validatedInput,
+      result,
+      startedAt,
+      status: "executed",
+      permissionEffect: permissionDecision.effect,
+      permissionReason: permissionDecision.reason,
+      confirmation: permissionDecision.confirmation,
+    });
+
+    return result;
   } finally {
     timeoutSignal.cleanup();
   }

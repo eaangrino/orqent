@@ -5,6 +5,10 @@ import {
   DEFAULT_OLLAMA_CONFIG,
   normalizeOllamaHost,
 } from "../../models/ollama/config.js";
+import {
+  buildPermissionPolicy,
+  type PermissionMode,
+} from "../../security/index.js";
 import type { AppView } from "./types.js";
 
 function resolveLaunchCwd() {
@@ -40,6 +44,19 @@ function formatThinkingModeLabel(mode: string) {
   }
 }
 
+function formatPermissionModeLabel(mode: PermissionMode) {
+  switch (mode) {
+    case "ask":
+      return "Ask";
+
+    case "allow":
+      return "Allow";
+
+    case "deny":
+      return "Deny";
+  }
+}
+
 export function useAppShell() {
   const [ activeView, setActiveView ] = useState<AppView>("home");
   const [ selectedModel, setSelectedModel ] = useState(
@@ -52,6 +69,8 @@ export function useAppShell() {
   const [ thinkingMode, setThinkingMode ] = useState(
     DEFAULT_OLLAMA_CONFIG.thinkingMode,
   );
+  const [ permissionMode, setPermissionMode ] =
+    useState<PermissionMode>("ask");
   const [ isOllamaConfigHydrated, setIsOllamaConfigHydrated ] = useState(false);
 
   useEffect(() => {
@@ -127,6 +146,11 @@ export function useAppShell() {
         setActiveView("thinking");
         return true;
 
+      case "/permissions":
+      case "/permission":
+        setActiveView("permissions");
+        return true;
+
       case "/home":
       case "/clear":
         setActiveView("home");
@@ -138,8 +162,12 @@ export function useAppShell() {
   }, []);
 
   const footerLineA = useMemo(() => {
-    return `Current Model: ${selectedModel} · Thinking Mode: ${formatThinkingModeLabel(thinkingMode)}`;
-  }, [ selectedModel, thinkingMode ]);
+    return [
+      `Current Model: ${selectedModel}`,
+      `Thinking Mode: ${formatThinkingModeLabel(thinkingMode)}`,
+      `Permissions: ${formatPermissionModeLabel(permissionMode)}`,
+    ].join(" · ");
+  }, [ selectedModel, thinkingMode, permissionMode ]);
 
   const footerLineB = useMemo(() => {
     return `Ollama Host: ${ollamaHost}`;
@@ -148,6 +176,15 @@ export function useAppShell() {
   const footerLineBRightText = useMemo(() => {
     return `Ruta: ${launchCwd}`;
   }, []);
+
+  const permissionPolicy = useMemo(
+    () =>
+      buildPermissionPolicy({
+        mode: permissionMode,
+        denyRiskAtLeast: "critical",
+      }),
+    [ permissionMode ],
+  );
 
   return {
     activeView,
@@ -160,6 +197,9 @@ export function useAppShell() {
     setGenerationOptions,
     thinkingMode,
     setThinkingMode,
+    permissionMode,
+    setPermissionMode,
+    permissionPolicy,
     isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,

@@ -18,6 +18,31 @@ export type TranscriptEntry = TranscriptEntryInput & {
   createdAt: string;
 };
 
+export type ToolActionEntryInput = {
+  toolName: string;
+  cwd: string;
+  input: unknown;
+  status: string;
+  ok: boolean;
+  durationMs: number;
+  risk?: string;
+  permissions?: string[];
+  requiresConfirmation?: boolean;
+  isReadOnly?: boolean;
+  permissionEffect?: string;
+  permissionReason?: string;
+  confirmation?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type ToolActionEntry = ToolActionEntryInput & {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+};
+
 function resolveDataDir() {
   const customDir = process.env.ORQENT_DATA_DIR?.trim();
 
@@ -45,6 +70,14 @@ export function getTranscriptFilePath(sessionId: string) {
   return join(resolveDataDir(), "sessions", `${toSafeSessionFileName(sessionId)}.jsonl`);
 }
 
+export function getToolActionsFilePath(sessionId: string) {
+  return join(
+    resolveDataDir(),
+    "sessions",
+    `${toSafeSessionFileName(sessionId)}.tools.jsonl`,
+  );
+}
+
 export async function appendTranscriptEntry(
   sessionId: string,
   entry: TranscriptEntryInput,
@@ -67,4 +100,28 @@ export async function appendTranscriptEntry(
   );
 
   return transcriptEntry;
+}
+
+export async function appendToolActionEntry(
+  sessionId: string,
+  entry: ToolActionEntryInput,
+): Promise<ToolActionEntry> {
+  const toolActionsFile = getToolActionsFilePath(sessionId);
+
+  await mkdir(dirname(toolActionsFile), { recursive: true });
+
+  const toolActionEntry: ToolActionEntry = {
+    id: randomUUID(),
+    sessionId,
+    createdAt: new Date().toISOString(),
+    ...entry,
+  };
+
+  await appendFile(
+    toolActionsFile,
+    `${JSON.stringify(toolActionEntry)}\n`,
+    "utf8",
+  );
+
+  return toolActionEntry;
 }

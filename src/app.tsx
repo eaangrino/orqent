@@ -19,6 +19,7 @@ import {
 import { appendTranscriptEntry, createSessionId } from "./sessions/index.js";
 import { GenerationOptionsScreen } from "./screens/generation-options.js";
 import { ThinkingModeScreen } from "./screens/thinking-mode.js";
+import { PermissionModeScreen } from "./screens/permission-mode.js";
 
 export function App() {
   // src/app.tsx
@@ -34,12 +35,17 @@ export function App() {
     setGenerationOptions,
     thinkingMode,
     setThinkingMode,
+    permissionMode,
+    setPermissionMode,
+    permissionPolicy,
     isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,
     handleSelectModel,
     handleSlashCommand,
   } = useAppShell();
+
+  void permissionPolicy; // Temporal typed export to avoid unused variable warning, will be used in future iterations when permissions are enforced.
 
   const { models, isLoading, error } = useOllamaModels(ollamaHost);
 
@@ -292,6 +298,7 @@ export function App() {
             onBack={handleBackToHome}
           />
         ) : null}
+
         {activeView === "params" ? (
           <GenerationOptionsScreen
             generationOptions={generationOptions}
@@ -299,10 +306,19 @@ export function App() {
             onBack={handleBackToHome}
           />
         ) : null}
+
         {activeView === "thinking" ? (
           <ThinkingModeScreen
             thinkingMode={thinkingMode}
             onChangeThinkingMode={setThinkingMode}
+            onBack={handleBackToHome}
+          />
+        ) : null}
+
+        {activeView === "permissions" ? (
+          <PermissionModeScreen
+            permissionMode={permissionMode}
+            onChangePermissionMode={setPermissionMode}
             onBack={handleBackToHome}
           />
         ) : null}

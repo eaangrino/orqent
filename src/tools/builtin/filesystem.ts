@@ -7,7 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { Dirent } from "node:fs";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import type {
   ToolDefinition,
   ToolExecutionContext,
@@ -99,6 +99,127 @@ export type ProjectSearchResult = {
 const DEFAULT_MAX_ENTRIES = 200;
 const MAX_ENTRIES_LIMIT = 1_000;
 
+function isPathInsideCwd(cwd: string, targetPath: string): boolean {
+  const relativePath = relative(cwd, targetPath);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+  );
+}
+
+function createFilesystemSandboxError(
+  requestedPath: string,
+  resolvedPath: string,
+): ToolExecutionResult {
+  return {
+    ok: false,
+    error: {
+      code: "filesystem_path_outside_cwd",
+      message: `Path "${requestedPath}" resolves outside the current working directory.`,
+      details: {
+        requestedPath,
+        resolvedPath,
+      },
+    },
+  };
+}
+
+async function resolvePathInsideCwd(
+  context: ToolExecutionContext,
+  requestedPath: string,
+): Promise<
+  | {
+    ok: true;
+    path: string;
+  }
+  | {
+    ok: false;
+    result: ToolExecutionResult;
+  }
+> {
+  const cwdRealPath = await realpath(context.cwd);
+  const targetPath = resolve(cwdRealPath, requestedPath);
+  const resolvedPath = await realpath(targetPath);
+
+  if (!isPathInsideCwd(cwdRealPath, resolvedPath)) {
+    return {
+      ok: false,
+      result: createFilesystemSandboxError(requestedPath, resolvedPath),
+    };
+  }
+
+  return {
+    ok: true,
+    path: resolvedPath,
+  };
+}
+
+async function resolveWritablePathInsideCwd(
+  context: ToolExecutionContext,
+  requestedPath: string,
+): Promise<
+  | {
+    ok: true;
+    path: string;
+    parentPath: string;
+  }
+  | {
+    ok: false;
+    result: ToolExecutionResult;
+  }
+> {
+  const cwdRealPath = await realpath(context.cwd);
+  const targetPath = resolve(cwdRealPath, requestedPath);
+
+  if (!isPathInsideCwd(cwdRealPath, targetPath)) {
+    return {
+      ok: false,
+      result: createFilesystemSandboxError(requestedPath, targetPath),
+    };
+  }
+
+  const parentPath = dirname(targetPath);
+  let nearestExistingParent = parentPath;
+
+  while (true) {
+    try {
+      await lstat(nearestExistingParent);
+      break;
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "ENOENT") {
+        throw error;
+      }
+
+      const nextParent = dirname(nearestExistingParent);
+
+      if (nextParent === nearestExistingParent) {
+        break;
+      }
+
+      nearestExistingParent = nextParent;
+    }
+  }
+
+  const nearestExistingParentRealPath = await realpath(nearestExistingParent);
+
+  if (!isPathInsideCwd(cwdRealPath, nearestExistingParentRealPath)) {
+    return {
+      ok: false,
+      result: createFilesystemSandboxError(
+        requestedPath,
+        nearestExistingParentRealPath,
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    path: targetPath,
+    parentPath,
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -173,10 +294,15 @@ async function listDirectory(
   context: ToolExecutionContext,
 ): Promise<ToolExecutionResult<FileSystemListResult>> {
   const requestedPath = input.path ?? ".";
-  const targetPath = resolve(context.cwd, requestedPath);
 
   try {
-    const resolvedPath = await realpath(targetPath);
+    const sandboxPath = await resolvePathInsideCwd(context, requestedPath);
+
+    if (!sandboxPath.ok) {
+      return sandboxPath.result as ToolExecutionResult<FileSystemListResult>;
+    }
+
+    const resolvedPath = sandboxPath.path;
     const targetStats = await lstat(resolvedPath);
 
     if (!targetStats.isDirectory()) {
@@ -287,10 +413,15 @@ async function readFilesystemFile(
   context: ToolExecutionContext,
 ): Promise<ToolExecutionResult<FileSystemReadResult>> {
   const requestedPath = input.path;
-  const targetPath = resolve(context.cwd, requestedPath);
 
   try {
-    const resolvedPath = await realpath(targetPath);
+    const sandboxPath = await resolvePathInsideCwd(context, requestedPath);
+
+    if (!sandboxPath.ok) {
+      return sandboxPath.result as ToolExecutionResult<FileSystemReadResult>;
+    }
+
+    const resolvedPath = sandboxPath.path;
     const stats = await lstat(resolvedPath);
 
     if (!stats.isFile()) {
@@ -381,10 +512,19 @@ async function writeFilesystemFile(
   context: ToolExecutionContext,
 ): Promise<ToolExecutionResult<FileSystemWriteResult>> {
   const requestedPath = input.path;
-  const targetPath = resolve(context.cwd, requestedPath);
-  const parentPath = dirname(targetPath);
 
   try {
+    const sandboxPath = await resolveWritablePathInsideCwd(
+      context,
+      requestedPath,
+    );
+
+    if (!sandboxPath.ok) {
+      return sandboxPath.result as ToolExecutionResult<FileSystemWriteResult>;
+    }
+
+    const targetPath = sandboxPath.path;
+    const parentPath = sandboxPath.parentPath;
     let fileExists = false;
 
     try {
@@ -690,10 +830,15 @@ async function searchProject(
   context: ToolExecutionContext,
 ): Promise<ToolExecutionResult<ProjectSearchResult>> {
   const requestedPath = input.path ?? ".";
-  const targetPath = resolve(context.cwd, requestedPath);
 
   try {
-    const searchRoot = await realpath(targetPath);
+    const sandboxPath = await resolvePathInsideCwd(context, requestedPath);
+
+    if (!sandboxPath.ok) {
+      return sandboxPath.result as ToolExecutionResult<ProjectSearchResult>;
+    }
+
+    const searchRoot = sandboxPath.path;
     const stats = await lstat(searchRoot);
 
     if (!stats.isDirectory()) {

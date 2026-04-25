@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createDefaultPermissionPolicy } from "../../security/index.js";
 import { createToolRegistry } from "../registry.js";
 import { executeTool } from "../router.js";
 import type {
@@ -314,5 +315,194 @@ describe("executeTool", () => {
     if (result.ok) {
       expect(result.result.value).toBe("después del retry");
     }
+  });
+
+  it("bloquea una tool cuando permissionPolicy está en deny", async () => {
+    const execute = vi.fn<(
+      input: EchoInput,
+      context: ToolExecutionContext,
+    ) => Promise<ToolExecutionResult<EchoResult>>>();
+
+    const registry = createToolRegistry([
+      createEchoTool({
+        execute,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "test.echo",
+      input: {
+        value: "no ejecutar",
+      },
+      sessionId: "session-test",
+      permissionPolicy: createDefaultPermissionPolicy("deny"),
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+
+    if (!result.ok) {
+      expect(result.error.code).toBe("tool_permission_denied");
+      expect(result.error.message).toBe("Permission mode is deny.");
+    }
+  });
+
+  it("allow mode permite una tool peligrosa sin confirmación", async () => {
+    const execute = vi.fn(async (
+      input: EchoInput,
+      context: ToolExecutionContext,
+    ): Promise<ToolExecutionResult<EchoResult>> => ({
+      ok: true,
+      result: {
+        value: input.value,
+        cwd: context.cwd,
+        sessionId: context.sessionId,
+      },
+    }));
+
+    const registry = createToolRegistry([
+      createEchoTool({
+        risk: "high",
+        requiresConfirmation: true,
+        isReadOnly: false,
+        permissions: [ "shell:execute" ],
+        execute,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "test.echo",
+      input: {
+        value: "ejecutar",
+      },
+      sessionId: "session-test",
+      permissionPolicy: createDefaultPermissionPolicy("allow"),
+    });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expectEchoResult(result);
+
+    if (result.ok) {
+      expect(result.result.value).toBe("ejecutar");
+    }
+  });
+
+  it("registra auditoría cuando una tool se ejecuta correctamente", async () => {
+    const toolActionLogger = vi.fn();
+    const registry = createToolRegistry([ createEchoTool() ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "test.echo",
+      input: {
+        value: "audit-ok",
+      },
+      sessionId: "session-test",
+      cwd: process.cwd(),
+      toolActionLogger,
+    });
+
+    expectEchoResult(result);
+    expect(toolActionLogger).toHaveBeenCalledTimes(1);
+    expect(toolActionLogger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-test",
+        toolName: "test.echo",
+        cwd: process.cwd(),
+        input: {
+          value: "audit-ok",
+        },
+        status: "executed",
+        ok: true,
+        risk: "safe",
+        permissions: [],
+        requiresConfirmation: false,
+        isReadOnly: true,
+        permissionEffect: "allow",
+        confirmation: "not_required",
+      }),
+    );
+  });
+
+  it("registra auditoría cuando una tool queda bloqueada por permisos", async () => {
+    const toolActionLogger = vi.fn();
+    const execute = vi.fn<(
+      input: EchoInput,
+      context: ToolExecutionContext,
+    ) => Promise<ToolExecutionResult<EchoResult>>>();
+
+    const registry = createToolRegistry([
+      createEchoTool({
+        execute,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "test.echo",
+      input: {
+        value: "audit-denied",
+      },
+      sessionId: "session-test",
+      permissionPolicy: createDefaultPermissionPolicy("deny"),
+      toolActionLogger,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(toolActionLogger).toHaveBeenCalledTimes(1);
+    expect(toolActionLogger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-test",
+        toolName: "test.echo",
+        input: {
+          value: "audit-denied",
+        },
+        status: "permission_denied",
+        ok: false,
+        permissionEffect: "deny",
+        permissionReason: "Permission mode is deny.",
+        confirmation: "not_required",
+        errorCode: "tool_permission_denied",
+      }),
+    );
+  });
+
+  it("redacta contenido sensible en auditoría", async () => {
+    const toolActionLogger = vi.fn();
+
+    const registry = createToolRegistry([
+      createEchoTool({
+        validateInput(input) {
+          return {
+            ok: true,
+            input: input as EchoInput,
+          };
+        },
+      }),
+    ]);
+
+    await executeTool({
+      registry,
+      toolName: "test.echo",
+      input: {
+        value: "audit-redacted",
+        content: "secret-content",
+        stdin: "secret-stdin",
+      },
+      sessionId: "session-test",
+      toolActionLogger,
+    });
+
+    expect(toolActionLogger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          content: "[redacted 14 bytes]",
+          stdin: "[redacted 12 bytes]",
+        }),
+      }),
+    );
   });
 });

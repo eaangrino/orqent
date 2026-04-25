@@ -19,6 +19,13 @@ export type ToolExecutionContext = {
   signal: AbortSignal;
 };
 
+export type ToolExecutionProfile = {
+  risk?: ToolRiskLevel;
+  permissions?: ToolPermission[];
+  requiresConfirmation?: boolean;
+  isReadOnly?: boolean;
+};
+
 export type ToolRetryConfig = {
   maxAttempts: number;
   delayMs: number;
@@ -45,6 +52,44 @@ export type ToolConfirmationDecision =
 export type ToolConfirmationHandler = (
   request: ToolConfirmationRequest,
 ) => Promise<ToolConfirmationDecision>;
+
+export type ToolActionStatus =
+  | "tool_not_found"
+  | "invalid_input"
+  | "permission_denied"
+  | "confirmation_required"
+  | "confirmation_denied"
+  | "executed";
+
+export type ToolConfirmationOutcome =
+  | "not_required"
+  | "missing"
+  | "allowed"
+  | "denied";
+
+export type ToolActionLogEntry = {
+  sessionId: string;
+  toolName: string;
+  cwd: string;
+  input: unknown;
+  status: ToolActionStatus;
+  ok: boolean;
+  durationMs: number;
+  risk?: ToolRiskLevel;
+  permissions?: ToolPermission[];
+  requiresConfirmation?: boolean;
+  isReadOnly?: boolean;
+  permissionEffect?: "allow" | "ask" | "deny";
+  permissionReason?: string;
+  confirmation?: ToolConfirmationOutcome;
+  errorCode?: string;
+  errorMessage?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type ToolActionLogger = (
+  entry: ToolActionLogEntry,
+) => void | Promise<void>;
 
 export type ToolValidationResult<TInput> =
   | {
@@ -92,6 +137,7 @@ export type ToolDefinition<TInput = Record<string, unknown>, TResult = unknown> 
   retry?: ToolRetryConfig;
 
   validateInput?: (input: unknown) => ToolValidationResult<TInput>;
+  getExecutionProfile?: (input: TInput) => ToolExecutionProfile;
 
   execute: (
     input: TInput,

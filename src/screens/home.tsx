@@ -47,23 +47,27 @@ const initialState: HomeUiState = {
 const slashCommands: SlashCommandItem[] = [
   {
     label: "/config",
-    description: "Abrir configuración",
+    description: "Open configuration",
   },
   {
     label: "/model",
-    description: "Ver modelos disponibles",
+    description: "View available models",
   },
   {
     label: "/params",
-    description: "Configurar parámetros de generación",
+    description: "Configure generation parameters",
   },
   {
     label: "/thinking",
-    description: "Configurar modo de reasoning",
+    description: "Configure reasoning mode",
+  },
+  {
+    label: "/permissions",
+    description: "Configure permission mode",
   },
   {
     label: "/home",
-    description: "Volver al inicio",
+    description: "Return to home",
   },
 ];
 
@@ -342,7 +346,7 @@ export function HomeScreen({
             items={filteredSlashCommands}
             selectedIndex={selectedCommandIndex}
             getKey={(command) => command.label}
-            emptyText="No hay comandos que coincidan."
+            emptyText="There are no matching commands."
             renderItem={({ item: command, isSelected }) => (
               <Box justifyContent="space-between">
                 <Text color={isSelected ? "cyan" : undefined}>
@@ -360,11 +364,13 @@ export function HomeScreen({
         <Text dimColor>
           <Text dimColor>
             {state.isSubmitting
-              ? (promptStatus ?? "Enviando...")
-              : (promptStatus ?? "Composer listo.")}
+              ? (promptStatus ?? "Sending...")
+              : (promptStatus ?? "Composer ready.")}
           </Text>
         </Text>
-        <Text dimColor>/ para comandos · ↑/↓ navegar · Enter ejecutar</Text>
+        <Text dimColor>
+          / for commands · ↑/↓ to navigate · Enter to execute
+        </Text>
         <Text dimColor>{contextStatus}</Text>
       </Box>
     </Box>
