@@ -22,6 +22,13 @@ export type OllamaChatMessage = {
   content: string;
 };
 
+export type CompactChatHistoryInput = {
+  host: string;
+  model: string;
+  previousSummary: string | null;
+  messages: OllamaChatMessage[];
+};
+
 export type StreamChatFromOllamaInput = {
   host: string;
   model: string;
@@ -151,4 +158,57 @@ export async function streamChatFromOllama({
     model: responseModel,
     response,
   };
+}
+
+export async function compactChatHistoryWithOllama({
+  host,
+  model,
+  previousSummary,
+  messages,
+}: CompactChatHistoryInput): Promise<string> {
+  if (!model.trim()) {
+    throw new Error("No hay modelo seleccionado.");
+  }
+
+  const compactableMessages = messages
+    .map((message) => ({
+      role: message.role,
+      content: message.content.trim(),
+    }))
+    .filter((message) => message.content.length > 0);
+
+  if (compactableMessages.length === 0) {
+    return previousSummary ?? "";
+  }
+
+  const client = createOllamaClient(host);
+
+  const transcript = compactableMessages
+    .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
+    .join("\n\n");
+
+  const previousSummarySection = previousSummary
+    ? `Resumen previo:\n${previousSummary}\n\n`
+    : "";
+
+  const response = await client.chat({
+    model,
+    stream: false,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Summarize the conversation to preserve useful context for future turns. " +
+          "Write the summary in the same language as the conversation being summarized. " +
+          "Preserve user preferences, technical decisions, project state, relevant errors, pending tasks, and important file names or commands. " +
+          "Do not invent information. Respond only with the updated summary.",
+      },
+      {
+        role: "user",
+        content: `${previousSummarySection}New messages to compact:\n${transcript}`,
+      },
+    ],
+  });
+
+  return response.message.content.trim();
 }

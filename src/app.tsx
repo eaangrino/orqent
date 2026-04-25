@@ -9,6 +9,7 @@ import { ModelSelectScreen } from "./screens/model-select.js";
 import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_ORQENT_SYSTEM_PROMPT,
+  compactChatHistoryWithOllama,
   loadSystemPrompt,
   streamChatFromOllama,
   type OllamaChatMessage,
@@ -51,6 +52,13 @@ export function App() {
     DEFAULT_ORQENT_SYSTEM_PROMPT,
   );
 
+  const [contextSummary, setContextSummary] = useState<string | null>(null);
+  const [compactedHistoryLength, setCompactedHistoryLength] = useState(0);
+
+  const maxContextMessagesBeforeCompaction = 10;
+  const recentContextMessagesToKeep = 6;
+  const minNewMessagesBeforeNextCompaction = 6;
+
   useEffect(() => {
     let isCancelled = false;
 
@@ -84,6 +92,68 @@ export function App() {
         model: selectedModel,
       });
 
+      let effectiveSummary = contextSummary;
+      let effectiveCompactedHistoryLength = compactedHistoryLength;
+
+      const compactableMessagesCount = Math.max(
+        0,
+        history.length - recentContextMessagesToKeep - compactedHistoryLength,
+      );
+
+      const shouldCompact =
+        history.length > maxContextMessagesBeforeCompaction &&
+        compactableMessagesCount >= minNewMessagesBeforeNextCompaction;
+
+      if (shouldCompact) {
+        setPromptStatus("Compactando contexto...");
+
+        const nextCompactedHistoryLength = Math.max(
+          0,
+          history.length - recentContextMessagesToKeep,
+        );
+
+        const messagesToCompact = history.slice(
+          compactedHistoryLength,
+          nextCompactedHistoryLength,
+        );
+
+        if (messagesToCompact.length > 0) {
+          effectiveSummary = await compactChatHistoryWithOllama({
+            host: ollamaHost,
+            model: selectedModel,
+            previousSummary: contextSummary,
+            messages: messagesToCompact,
+          });
+
+          effectiveCompactedHistoryLength = nextCompactedHistoryLength;
+
+          setContextSummary(effectiveSummary);
+          setCompactedHistoryLength(effectiveCompactedHistoryLength);
+
+          await appendTranscriptEntry(sessionId, {
+            role: "system",
+            content: effectiveSummary,
+            model: selectedModel,
+            metadata: {
+              type: "context_compaction",
+              compactedMessages: messagesToCompact.length,
+              compactedHistoryLength: effectiveCompactedHistoryLength,
+            },
+          });
+        }
+
+        setPromptStatus("Generando respuesta...");
+      }
+
+      const liveHistory = history.slice(effectiveCompactedHistoryLength);
+
+      const effectiveSystemPrompt = effectiveSummary
+        ? `${systemPrompt}
+
+Resumen compactado de la conversación previa:
+${effectiveSummary}`
+        : systemPrompt;
+
       try {
         const result = await streamChatFromOllama({
           host: ollamaHost,
@@ -91,9 +161,9 @@ export function App() {
           messages: [
             {
               role: "system",
-              content: systemPrompt,
+              content: effectiveSystemPrompt,
             },
-            ...history,
+            ...liveHistory,
             {
               role: "user",
               content: prompt,
@@ -130,7 +200,14 @@ export function App() {
         throw new Error(message);
       }
     },
-    [ollamaHost, selectedModel, sessionId, systemPrompt],
+    [
+      ollamaHost,
+      selectedModel,
+      sessionId,
+      systemPrompt,
+      contextSummary,
+      compactedHistoryLength,
+    ],
   );
 
   return (
