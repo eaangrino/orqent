@@ -6,8 +6,10 @@ import { useOllamaModels } from "./models/ollama/use-ollama-models.js";
 import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  DEFAULT_ORQENT_SYSTEM_PROMPT,
+  loadSystemPrompt,
   streamChatFromOllama,
   type OllamaChatMessage,
 } from "./runtime/index.js";
@@ -45,6 +47,28 @@ export function App() {
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
   const [sessionId] = useState(() => createSessionId());
 
+  const [systemPrompt, setSystemPrompt] = useState(
+    DEFAULT_ORQENT_SYSTEM_PROMPT,
+  );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function hydrateSystemPrompt() {
+      const nextSystemPrompt = await loadSystemPrompt();
+
+      if (!isCancelled) {
+        setSystemPrompt(nextSystemPrompt);
+      }
+    }
+
+    void hydrateSystemPrompt();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   const handlePromptSubmit = useCallback(
     async (
       prompt: string,
@@ -65,6 +89,10 @@ export function App() {
           host: ollamaHost,
           model: selectedModel,
           messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
             ...history,
             {
               role: "user",
@@ -102,7 +130,7 @@ export function App() {
         throw new Error(message);
       }
     },
-    [ollamaHost, selectedModel, sessionId],
+    [ollamaHost, selectedModel, sessionId, systemPrompt],
   );
 
   return (
