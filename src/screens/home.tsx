@@ -57,6 +57,10 @@ const slashCommands: SlashCommandItem[] = [
     description: "Configurar parámetros de generación",
   },
   {
+    label: "/thinking",
+    description: "Configurar modo de reasoning",
+  },
+  {
     label: "/home",
     description: "Volver al inicio",
   },

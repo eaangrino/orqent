@@ -1,3 +1,11 @@
+export type OllamaThinkingMode =
+  | "default"
+  | "disabled"
+  | "enabled"
+  | "low"
+  | "medium"
+  | "high";
+
 export type OllamaGenerationOptions = {
   temperature: number;
   topP: number;
@@ -11,6 +19,7 @@ export type OllamaConfig = {
   host: string;
   selectedModel: string | null;
   generationOptions: OllamaGenerationOptions;
+  thinkingMode: OllamaThinkingMode;
 };
 
 export type OllamaModelItem = {

@@ -4,9 +4,14 @@ import { dirname, join } from "node:path";
 import {
   DEFAULT_OLLAMA_CONFIG,
   DEFAULT_OLLAMA_GENERATION_OPTIONS,
+  DEFAULT_OLLAMA_THINKING_MODE,
   normalizeOllamaHost,
 } from "./config.js";
-import type { OllamaConfig, OllamaGenerationOptions } from "./types.js";
+import type {
+  OllamaConfig,
+  OllamaGenerationOptions,
+  OllamaThinkingMode,
+} from "./types.js";
 
 type PersistedOllamaConfig = Partial<Omit<OllamaConfig, "generationOptions">> & {
   generationOptions?: Partial<OllamaGenerationOptions>;
@@ -42,6 +47,21 @@ function normalizeGenerationNumber(
   const clamped = Math.min(options.max, Math.max(options.min, value));
 
   return options.integer ? Math.round(clamped) : clamped;
+}
+
+function normalizeThinkingMode(value: unknown): OllamaThinkingMode {
+  if (
+    value === "default" ||
+    value === "disabled" ||
+    value === "enabled" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high"
+  ) {
+    return value;
+  }
+
+  return DEFAULT_OLLAMA_THINKING_MODE;
 }
 
 function normalizeGenerationOptions(
@@ -98,6 +118,7 @@ function normalizePersistedConfig(
     host,
     selectedModel,
     generationOptions: normalizeGenerationOptions(parsed.generationOptions),
+    thinkingMode: normalizeThinkingMode(parsed.thinkingMode),
   };
 }
 

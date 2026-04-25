@@ -17,6 +17,29 @@ function resolveLaunchCwd() {
 
 const launchCwd = resolveLaunchCwd();
 
+function formatThinkingModeLabel(mode: string) {
+  switch (mode) {
+    case "disabled":
+      return "Disabled";
+
+    case "enabled":
+      return "Enabled";
+
+    case "low":
+      return "Low";
+
+    case "medium":
+      return "Medium";
+
+    case "high":
+      return "High";
+
+    case "default":
+    default:
+      return "Default";
+  }
+}
+
 export function useAppShell() {
   const [ activeView, setActiveView ] = useState<AppView>("home");
   const [ selectedModel, setSelectedModel ] = useState(
@@ -25,6 +48,9 @@ export function useAppShell() {
   const [ ollamaHost, setOllamaHost ] = useState(DEFAULT_OLLAMA_CONFIG.host);
   const [ generationOptions, setGenerationOptions ] = useState(
     DEFAULT_OLLAMA_CONFIG.generationOptions,
+  );
+  const [ thinkingMode, setThinkingMode ] = useState(
+    DEFAULT_OLLAMA_CONFIG.thinkingMode,
   );
   const [ isOllamaConfigHydrated, setIsOllamaConfigHydrated ] = useState(false);
 
@@ -43,6 +69,7 @@ export function useAppShell() {
         config.selectedModel ?? DEFAULT_OLLAMA_CONFIG.selectedModel ?? "gemma4:e4b",
       );
       setGenerationOptions(config.generationOptions);
+      setThinkingMode(config.thinkingMode);
       setIsOllamaConfigHydrated(true);
     }
 
@@ -62,8 +89,9 @@ export function useAppShell() {
       host: ollamaHost,
       selectedModel,
       generationOptions,
+      thinkingMode,
     });
-  }, [ isOllamaConfigHydrated, ollamaHost, selectedModel, generationOptions ]);
+  }, [ isOllamaConfigHydrated, ollamaHost, selectedModel, generationOptions, thinkingMode ]);
 
   const handleBackToHome = useCallback(() => {
     setActiveView("home");
@@ -94,6 +122,11 @@ export function useAppShell() {
         setActiveView("params");
         return true;
 
+      case "/thinking":
+      case "/reasoning":
+        setActiveView("thinking");
+        return true;
+
       case "/home":
       case "/clear":
         setActiveView("home");
@@ -105,8 +138,8 @@ export function useAppShell() {
   }, []);
 
   const footerLineA = useMemo(() => {
-    return `Modelo Actual: ${selectedModel}`;
-  }, [ selectedModel ]);
+    return `Current Model: ${selectedModel} · Thinking Mode: ${formatThinkingModeLabel(thinkingMode)}`;
+  }, [ selectedModel, thinkingMode ]);
 
   const footerLineB = useMemo(() => {
     return `Ollama Host: ${ollamaHost}`;
@@ -125,6 +158,8 @@ export function useAppShell() {
     selectedModel,
     generationOptions,
     setGenerationOptions,
+    thinkingMode,
+    setThinkingMode,
     isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,

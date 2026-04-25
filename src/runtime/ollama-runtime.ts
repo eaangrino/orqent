@@ -1,5 +1,8 @@
 import { createOllamaClient } from "../models/ollama/client.js";
-import type { OllamaGenerationOptions } from "../models/ollama/types.js";
+import type {
+  OllamaGenerationOptions,
+  OllamaThinkingMode,
+} from "../models/ollama/types.js";
 
 export type SendPromptToOllamaInput = {
   host: string;
@@ -36,6 +39,7 @@ export type StreamChatFromOllamaInput = {
   model: string;
   messages: OllamaChatMessage[];
   generationOptions?: OllamaGenerationOptions;
+  thinkingMode?: OllamaThinkingMode;
   onToken: (token: string) => void;
 };
 
@@ -54,6 +58,27 @@ function toOllamaRequestOptions(
     num_predict: generationOptions.numPredict,
     repeat_penalty: generationOptions.repeatPenalty,
   };
+}
+
+function toOllamaThinkOption(
+  thinkingMode: OllamaThinkingMode | undefined,
+): boolean | "low" | "medium" | "high" | undefined {
+  switch (thinkingMode) {
+    case "disabled":
+      return false;
+
+    case "enabled":
+      return true;
+
+    case "low":
+    case "medium":
+    case "high":
+      return thinkingMode;
+
+    case "default":
+    case undefined:
+      return undefined;
+  }
 }
 
 export async function sendPromptToOllama({
@@ -134,6 +159,7 @@ export async function streamChatFromOllama({
   model,
   messages,
   generationOptions,
+  thinkingMode,
   onToken,
 }: StreamChatFromOllamaInput): Promise<SendPromptToOllamaResult> {
   if (!model.trim()) {
@@ -157,6 +183,7 @@ export async function streamChatFromOllama({
     model,
     messages: normalizedMessages,
     options: toOllamaRequestOptions(generationOptions),
+    think: toOllamaThinkOption(thinkingMode),
     stream: true,
   });
 

@@ -16,6 +16,7 @@ import {
 } from "./runtime/index.js";
 import { appendTranscriptEntry, createSessionId } from "./sessions/index.js";
 import { GenerationOptionsScreen } from "./screens/generation-options.js";
+import { ThinkingModeScreen } from "./screens/thinking-mode.js";
 
 export function App() {
   // src/app.tsx
@@ -29,6 +30,8 @@ export function App() {
     selectedModel,
     generationOptions,
     setGenerationOptions,
+    thinkingMode,
+    setThinkingMode,
     isOllamaConfigHydrated,
     handleBackToHome,
     handleSelectEndpoint,
@@ -210,6 +213,7 @@ ${effectiveSummary}`
             },
           ],
           generationOptions,
+          thinkingMode,
           onToken,
         });
 
@@ -250,6 +254,7 @@ ${effectiveSummary}`
       contextSummary,
       compactedHistoryLength,
       generationOptions,
+      thinkingMode,
     ],
   );
 
@@ -296,6 +301,13 @@ ${effectiveSummary}`
           <GenerationOptionsScreen
             generationOptions={generationOptions}
             onChangeGenerationOptions={setGenerationOptions}
+            onBack={handleBackToHome}
+          />
+        ) : null}
+        {activeView === "thinking" ? (
+          <ThinkingModeScreen
+            thinkingMode={thinkingMode}
+            onChangeThinkingMode={setThinkingMode}
             onBack={handleBackToHome}
           />
         ) : null}
