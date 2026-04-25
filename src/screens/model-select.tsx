@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { SelectableList } from "../components/selectable-list.js";
-import type { OllamaModelItem } from "../features/ollama/types.js";
+import type { OllamaModelItem } from "../models/ollama/types.js";
 
 type ModelSelectScreenProps = {
   models: OllamaModelItem[];

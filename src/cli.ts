@@ -3,8 +3,8 @@ import meow from "meow";
 import {
   getOllamaConfigFilePath,
   saveOllamaConfig,
-} from "./features/ollama/storage.js";
-import { DEFAULT_OLLAMA_CONFIG } from "./features/ollama/config.js";
+} from "./models/ollama/storage.js";
+import { DEFAULT_OLLAMA_CONFIG } from "./models/ollama/config.js";
 
 const helpText = `
   Usage

@@ -1,8 +1,8 @@
 import { Box } from "ink";
 import { Layout } from "./components/layout.js";
-import { useAppShell } from "./features/app-shell/use-app-shell.js";
-import { useOllamaConnection } from "./features/ollama/use-ollama-connection.js";
-import { useOllamaModels } from "./features/ollama/use-ollama-models.js";
+import { useAppShell } from "./shell/app-shell/use-app-shell.js";
+import { useOllamaConnection } from "./models/ollama/use-ollama-connection.js";
+import { useOllamaModels } from "./models/ollama/use-ollama-models.js";
 import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";

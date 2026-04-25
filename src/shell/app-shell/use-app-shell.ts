@@ -1,10 +1,10 @@
 import { realpathSync } from "node:fs";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { loadOllamaConfig, saveOllamaConfig } from "../ollama/storage.js";
+import { loadOllamaConfig, saveOllamaConfig } from "../../models/ollama/storage.js";
 import {
   DEFAULT_OLLAMA_CONFIG,
   normalizeOllamaHost,
-} from "../ollama/config.js";
+} from "../../models/ollama/config.js";
 import type { AppView } from "./types.js";
 
 function resolveLaunchCwd() {

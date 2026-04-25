@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_OLLAMA_CONFIG } from "../features/ollama/config.js";
+import { DEFAULT_OLLAMA_CONFIG } from "../models/ollama/config.js";
 
 const execFileAsync = promisify(execFile);
 
