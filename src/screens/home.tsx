@@ -24,6 +24,7 @@ type HomeUiState = {
 type HomeScreenProps = {
   messages: ChatMessage[];
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  contextStatus: string;
   onSlashCommand: (command: string) => boolean;
   onPromptSubmit: (
     prompt: string,
@@ -80,6 +81,7 @@ function toOllamaChatHistory(messages: ChatMessage[]): OllamaChatMessage[] {
 export function HomeScreen({
   messages,
   setMessages,
+  contextStatus,
   onSlashCommand,
   onPromptSubmit,
   promptStatus,
@@ -363,6 +365,7 @@ export function HomeScreen({
           </Text>
         </Text>
         <Text dimColor>/ para comandos · ↑/↓ navegar · Enter ejecutar</Text>
+        <Text dimColor>{contextStatus}</Text>
       </Box>
     </Box>
   );

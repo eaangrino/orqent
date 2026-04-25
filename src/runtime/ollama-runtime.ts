@@ -252,6 +252,8 @@ export async function compactChatHistoryWithOllama({
           "Summarize the conversation to preserve useful context for future turns. " +
           "Write the summary in the same language as the conversation being summarized. " +
           "Preserve user preferences, technical decisions, project state, relevant errors, pending tasks, and important file names or commands. " +
+          "Preserve exact user questions, explicit tasks, checklist items, and decisions when they are important for future turns. " +
+          "Do not replace an important exact question with a vague paraphrase if the original wording is useful. " +
           "Do not invent information. Respond only with the updated summary.",
       },
       {

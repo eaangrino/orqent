@@ -9,8 +9,10 @@ import { ModelSelectScreen } from "./screens/model-select.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_ORQENT_SYSTEM_PROMPT,
+  buildEffectiveSystemPrompt,
   compactChatHistoryWithOllama,
   loadSystemPrompt,
+  planContextUsage,
   streamChatFromOllama,
   type OllamaChatMessage,
 } from "./runtime/index.js";
@@ -64,9 +66,12 @@ export function App() {
   const [contextSummary, setContextSummary] = useState<string | null>(null);
   const [compactedHistoryLength, setCompactedHistoryLength] = useState(0);
 
-  const maxContextMessagesBeforeCompaction = 10;
-  const recentContextMessagesToKeep = 6;
-  const minNewMessagesBeforeNextCompaction = 6;
+  const contextStatus = useMemo(() => {
+    const liveMessages = Math.max(0, messages.length - compactedHistoryLength);
+    const summaryState = contextSummary ? "con resumen" : "sin resumen";
+
+    return `Contexto: ${liveMessages} vivos · ${compactedHistoryLength} compactados · ${summaryState}`;
+  }, [messages.length, compactedHistoryLength, contextSummary]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -119,14 +124,14 @@ export function App() {
       onToken: (token: string) => void,
     ) => {
       if (!isOllamaConfigHydrated) {
-        throw new Error("La configuración de Ollama todavía se está cargando.");
+        throw new Error("The Ollama configuration is still loading.");
       }
 
       if (!activeModel) {
-        throw new Error("No hay modelo activo seleccionado. Usa /model.");
+        throw new Error("No active model selected. Use /model.");
       }
       setHasStartedConversation(true);
-      setPromptStatus(`Generando respuesta con ${activeModel}...`);
+      setPromptStatus(`Generating a response with ${activeModel}...`);
 
       await appendTranscriptEntry(sessionId, {
         role: "user",
@@ -137,38 +142,25 @@ export function App() {
       let effectiveSummary = contextSummary;
       let effectiveCompactedHistoryLength = compactedHistoryLength;
 
-      const compactableMessagesCount = Math.max(
-        0,
-        history.length - recentContextMessagesToKeep - compactedHistoryLength,
-      );
+      const contextPlan = planContextUsage({
+        history,
+        compactedHistoryLength,
+      });
 
-      const shouldCompact =
-        history.length > maxContextMessagesBeforeCompaction &&
-        compactableMessagesCount >= minNewMessagesBeforeNextCompaction;
-
-      if (shouldCompact) {
+      if (contextPlan.shouldCompact) {
         setPromptStatus("Compactando contexto...");
 
-        const nextCompactedHistoryLength = Math.max(
-          0,
-          history.length - recentContextMessagesToKeep,
-        );
-
-        const messagesToCompact = history.slice(
-          compactedHistoryLength,
-          nextCompactedHistoryLength,
-        );
-
-        if (messagesToCompact.length > 0) {
+        if (contextPlan.messagesToCompact.length > 0) {
           effectiveSummary = await compactChatHistoryWithOllama({
             host: ollamaHost,
             model: activeModel,
             previousSummary: contextSummary,
-            messages: messagesToCompact,
+            messages: contextPlan.messagesToCompact,
             generationOptions,
           });
 
-          effectiveCompactedHistoryLength = nextCompactedHistoryLength;
+          effectiveCompactedHistoryLength =
+            contextPlan.nextCompactedHistoryLength;
 
           setContextSummary(effectiveSummary);
           setCompactedHistoryLength(effectiveCompactedHistoryLength);
@@ -179,23 +171,25 @@ export function App() {
             model: activeModel,
             metadata: {
               type: "context_compaction",
-              compactedMessages: messagesToCompact.length,
+              compactedMessages: contextPlan.messagesToCompact.length,
               compactedHistoryLength: effectiveCompactedHistoryLength,
+              liveHistoryLength: contextPlan.liveHistory.length,
+              policy: contextPlan.config,
             },
           });
         }
 
-        setPromptStatus("Generando respuesta...");
+        setPromptStatus(`Generating a response with ${activeModel}...`);
       }
 
-      const liveHistory = history.slice(effectiveCompactedHistoryLength);
+      const liveHistory = contextPlan.shouldCompact
+        ? contextPlan.liveHistory
+        : history.slice(effectiveCompactedHistoryLength);
 
-      const effectiveSystemPrompt = effectiveSummary
-        ? `${systemPrompt}
-
-Resumen compactado de la conversación previa:
-${effectiveSummary}`
-        : systemPrompt;
+      const effectiveSystemPrompt = buildEffectiveSystemPrompt({
+        systemPrompt,
+        contextSummary: effectiveSummary,
+      });
 
       try {
         const result = await streamChatFromOllama({
@@ -223,14 +217,14 @@ ${effectiveSummary}`
           model: result.model,
         });
 
-        setPromptStatus("Respuesta recibida.");
+        setPromptStatus("Response received.");
 
         return result.response;
       } catch (error_) {
         const message =
           error_ instanceof Error
             ? error_.message
-            : "Error desconocido generando respuesta con Ollama";
+            : "Unknown error generating response with Ollama";
 
         await appendTranscriptEntry(sessionId, {
           role: "assistant",
@@ -241,7 +235,7 @@ ${effectiveSummary}`
           },
         });
 
-        setPromptStatus(`Error generando respuesta: ${message}`);
+        setPromptStatus(`Error generating response: ${message}`);
         throw new Error(message);
       }
     },
@@ -273,6 +267,7 @@ ${effectiveSummary}`
           <HomeScreen
             messages={messages}
             setMessages={setMessages}
+            contextStatus={contextStatus}
             onSlashCommand={handleSlashCommand}
             onPromptSubmit={handlePromptSubmit}
             promptStatus={promptStatus}
