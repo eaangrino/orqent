@@ -7,7 +7,10 @@ import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
 import { useCallback, useState } from "react";
-import { streamPromptFromOllama } from "./runtime/index.js";
+import {
+  streamChatFromOllama,
+  type OllamaChatMessage,
+} from "./runtime/index.js";
 import { appendTranscriptEntry, createSessionId } from "./sessions/index.js";
 
 export function App() {
@@ -43,7 +46,11 @@ export function App() {
   const [sessionId] = useState(() => createSessionId());
 
   const handlePromptSubmit = useCallback(
-    async (prompt: string, onToken: (token: string) => void) => {
+    async (
+      prompt: string,
+      history: OllamaChatMessage[],
+      onToken: (token: string) => void,
+    ) => {
       setHasStartedConversation(true);
       setPromptStatus("Generando respuesta...");
 
@@ -54,10 +61,16 @@ export function App() {
       });
 
       try {
-        const result = await streamPromptFromOllama({
+        const result = await streamChatFromOllama({
           host: ollamaHost,
           model: selectedModel,
-          prompt,
+          messages: [
+            ...history,
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
           onToken,
         });
 

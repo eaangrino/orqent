@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import TextInput from "ink-text-input";
 import { SelectableList } from "../components/selectable-list.js";
+import type { OllamaChatMessage } from "../runtime/index.js";
 
 type ChatMessage = {
   id: string;
@@ -19,6 +20,7 @@ type HomeScreenProps = {
   onSlashCommand: (command: string) => boolean;
   onPromptSubmit: (
     prompt: string,
+    history: OllamaChatMessage[],
     onToken: (token: string) => void,
   ) => Promise<string>;
   promptStatus: string | null;
@@ -52,6 +54,13 @@ const slashCommands: SlashCommandItem[] = [
 
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function toOllamaChatHistory(messages: ChatMessage[]): OllamaChatMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
 }
 
 export function HomeScreen({
@@ -189,7 +198,9 @@ export function HomeScreen({
       messages: [...current.messages, userMessage, assistantMessage],
     }));
 
-    void onPromptSubmit(normalized, (token) => {
+    const chatHistory = toOllamaChatHistory(state.messages);
+
+    void onPromptSubmit(normalized, chatHistory, (token) => {
       setState((current) => ({
         ...current,
         messages: current.messages.map((message) =>
