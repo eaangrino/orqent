@@ -3,14 +3,21 @@ import { Box, Text, useInput, useWindowSize } from "ink";
 import TextInput from "ink-text-input";
 import { SelectableList } from "../components/selectable-list.js";
 
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
 type HomeUiState = {
   prompt: string;
   isSubmitting: boolean;
+  messages: ChatMessage[];
 };
 
 type HomeScreenProps = {
   onSlashCommand: (command: string) => boolean;
-  onPromptSubmit: (prompt: string) => Promise<void>;
+  onPromptSubmit: (prompt: string) => Promise<string>;
   promptStatus: string | null;
 };
 
@@ -22,6 +29,7 @@ type SlashCommandItem = {
 const initialState: HomeUiState = {
   prompt: "",
   isSubmitting: false,
+  messages: [],
 };
 
 const slashCommands: SlashCommandItem[] = [
@@ -38,6 +46,10 @@ const slashCommands: SlashCommandItem[] = [
     description: "Volver al inicio",
   },
 ];
+
+function createMessageId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export function HomeScreen({
   onSlashCommand,
@@ -144,36 +156,101 @@ export function HomeScreen({
       const commandToRun = selected?.label ?? normalized;
       onSlashCommand(commandToRun);
 
-      setState({
+      setState((current) => ({
+        ...current,
         prompt: "",
         isSubmitting: false,
-      });
+      }));
       setSelectedCommandIndex(0);
       return;
     }
 
-    setState({
+    const userMessage: ChatMessage = {
+      id: createMessageId(),
+      role: "user",
+      content: normalized,
+    };
+
+    setState((current) => ({
+      ...current,
       prompt: "",
       isSubmitting: true,
-    });
+      messages: [...current.messages, userMessage],
+    }));
 
-    setState({
-      prompt: "",
-      isSubmitting: true,
-    });
+    void onPromptSubmit(normalized)
+      .then((response) => {
+        const assistantMessage: ChatMessage = {
+          id: createMessageId(),
+          role: "assistant",
+          content: response.trim() || "(respuesta vacía)",
+        };
 
-    void onPromptSubmit(normalized).finally(() => {
-      setState((current) => ({
-        ...current,
-        isSubmitting: false,
-      }));
-    });
+        setState((current) => ({
+          ...current,
+          messages: [...current.messages, assistantMessage],
+        }));
+      })
+      .catch((error_) => {
+        const message =
+          error_ instanceof Error
+            ? error_.message
+            : "Error desconocido obteniendo respuesta de Ollama";
+
+        const assistantMessage: ChatMessage = {
+          id: createMessageId(),
+          role: "assistant",
+          content: `Error: ${message}`,
+        };
+
+        setState((current) => ({
+          ...current,
+          messages: [...current.messages, assistantMessage],
+        }));
+      })
+      .finally(() => {
+        setState((current) => ({
+          ...current,
+          isSubmitting: false,
+        }));
+      });
   };
 
   const isShowingSlashCommands = state.prompt.trim().startsWith("/");
 
   return (
     <Box flexDirection="column" alignItems="center" width="100%">
+      {state.messages.length > 0 ? (
+        <Box
+          width={inputWidth}
+          flexDirection="column"
+          marginBottom={1}
+          borderStyle="round"
+          borderColor="gray"
+          paddingX={1}
+          paddingY={1}>
+          {state.messages.map((message) => {
+            const isUser = message.role === "user";
+
+            return (
+              <Box
+                key={message.id}
+                flexDirection="column"
+                marginBottom={1}
+                paddingX={1}
+                paddingY={1}
+                backgroundColor={isUser ? "#4a4a4a" : "#2f2f2f"}>
+                <Text color={isUser ? "cyan" : "green"} bold>
+                  {isUser ? "Tú" : "Orqent"}
+                </Text>
+
+                <Text color="white">{message.content}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ) : null}
+
       <Box
         width={inputWidth}
         borderStyle="round"

@@ -38,19 +38,23 @@ export function App() {
         : `Offline${ollamaConnectionResult?.error ? ` · ${ollamaConnectionResult.error}` : ""}`;
 
   const [promptStatus, setPromptStatus] = useState<string | null>(null);
+  const [hasStartedConversation, setHasStartedConversation] = useState(false);
 
   const handlePromptSubmit = useCallback(
     async (prompt: string) => {
+      setHasStartedConversation(true);
       setPromptStatus("Enviando prompt a Ollama...");
 
       try {
-        await sendPromptToOllama({
+        const result = await sendPromptToOllama({
           host: ollamaHost,
           model: selectedModel,
           prompt,
         });
 
-        setPromptStatus("Prompt enviado a Ollama.");
+        setPromptStatus("Respuesta recibida.");
+
+        return result.response;
       } catch (error_) {
         const message =
           error_ instanceof Error
@@ -58,6 +62,7 @@ export function App() {
             : "Error desconocido enviando prompt a Ollama";
 
         setPromptStatus(`Error enviando prompt: ${message}`);
+        throw new Error(message);
       }
     },
     [ollamaHost, selectedModel],
@@ -71,7 +76,8 @@ export function App() {
       topRightText={`vista: ${activeView}`}
       footerLineA={footerLineA}
       footerLineB={`${footerLineB} · ${ollamaConnectionLabel}`}
-      footerLineBRightText={footerLineBRightText}>
+      footerLineBRightText={footerLineBRightText}
+      hideBrand={hasStartedConversation}>
       <Box width="100%" flexDirection="column" alignItems="center">
         {activeView === "home" ? (
           <HomeScreen

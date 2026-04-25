@@ -7,6 +7,7 @@ type LayoutProps = {
   footerLineA: string;
   footerLineB: string;
   footerLineBRightText: string;
+  hideBrand?: boolean;
   children: ReactNode;
 };
 
@@ -24,38 +25,41 @@ export function Layout({
   footerLineA,
   footerLineB,
   footerLineBRightText,
+  hideBrand = false,
   children,
 }: LayoutProps) {
-  const { columns, rows } = useWindowSize();
+  const { columns } = useWindowSize();
 
   return (
-    <Box
-      flexDirection="column"
-      width={columns}
-      height={rows}
-      paddingX={2}
-      paddingY={1}>
+    <Box flexDirection="column" width={columns} paddingX={2} paddingY={1}>
       <Box justifyContent="space-between">
         <Text dimColor>{topLeftText}</Text>
         <Text dimColor>{topRightText}</Text>
       </Box>
 
       <Box
-        flexGrow={1}
         flexDirection="column"
-        justifyContent="center"
+        justifyContent={hideBrand ? "flex-start" : "center"}
         alignItems="center">
-        <Text color="#FF8549" bold>
-          O R Q E N T
-        </Text>
+        {!hideBrand ? (
+          <>
+            <Text color="#FF8549" bold>
+              O R Q E N T
+            </Text>
 
-        {logoLines.map((line) => (
-          <Text key={line} color="#FF8549">
-            {line}
-          </Text>
-        ))}
+            {logoLines.map((line) => (
+              <Text key={line} color="#FF8549">
+                {line}
+              </Text>
+            ))}
+          </>
+        ) : null}
 
-        <Box marginTop={1} flexDirection="column" alignItems="center">
+        <Box
+          marginTop={hideBrand ? 0 : 1}
+          flexDirection="column"
+          alignItems="center"
+          width="100%">
           {children}
         </Box>
       </Box>
