@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import TextInput from "ink-text-input";
 import { SelectableList } from "../components/selectable-list.js";
@@ -10,6 +10,8 @@ type HomeUiState = {
 
 type HomeScreenProps = {
   onSlashCommand: (command: string) => boolean;
+  onPromptSubmit: (prompt: string) => Promise<void>;
+  promptStatus: string | null;
 };
 
 type SlashCommandItem = {
@@ -37,10 +39,13 @@ const slashCommands: SlashCommandItem[] = [
   },
 ];
 
-export function HomeScreen({ onSlashCommand }: HomeScreenProps) {
+export function HomeScreen({
+  onSlashCommand,
+  onPromptSubmit,
+  promptStatus,
+}: HomeScreenProps) {
   const [state, setState] = useState<HomeUiState>(initialState);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
-  const submitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { columns } = useWindowSize();
 
   const inputWidth = useMemo(() => {
@@ -69,14 +74,6 @@ export function HomeScreen({ onSlashCommand }: HomeScreenProps) {
       setSelectedCommandIndex(0);
     }
   }, [filteredSlashCommands.length, selectedCommandIndex]);
-
-  useEffect(() => {
-    return () => {
-      if (submitTimeoutRef.current) {
-        clearTimeout(submitTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useInput((input, key) => {
     if (!state.prompt.trim().startsWith("/")) {
@@ -155,21 +152,22 @@ export function HomeScreen({ onSlashCommand }: HomeScreenProps) {
       return;
     }
 
-    if (submitTimeoutRef.current) {
-      clearTimeout(submitTimeoutRef.current);
-    }
+    setState({
+      prompt: "",
+      isSubmitting: true,
+    });
 
     setState({
       prompt: "",
       isSubmitting: true,
     });
 
-    submitTimeoutRef.current = setTimeout(() => {
+    void onPromptSubmit(normalized).finally(() => {
       setState((current) => ({
         ...current,
         isSubmitting: false,
       }));
-    }, 250);
+    });
   };
 
   const isShowingSlashCommands = state.prompt.trim().startsWith("/");
@@ -228,7 +226,9 @@ export function HomeScreen({ onSlashCommand }: HomeScreenProps) {
 
       <Box marginTop={1} flexDirection="column" alignItems="center">
         <Text dimColor>
-          {state.isSubmitting ? "Procesando..." : "Composer listo."}
+          {state.isSubmitting
+            ? "Enviando..."
+            : (promptStatus ?? "Composer listo.")}
         </Text>
         <Text dimColor>/ para comandos · ↑/↓ navegar · Enter ejecutar</Text>
       </Box>

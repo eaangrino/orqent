@@ -6,6 +6,8 @@ import { useOllamaModels } from "./models/ollama/use-ollama-models.js";
 import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
+import { useCallback, useState } from "react";
+import { sendPromptToOllama } from "./runtime/index.js";
 
 export function App() {
   // src/app.tsx
@@ -35,6 +37,32 @@ export function App() {
         ? `Online${ollamaConnectionResult.version ? ` · v${ollamaConnectionResult.version}` : ""} · ${ollamaConnectionResult.latencyMs}ms`
         : `Offline${ollamaConnectionResult?.error ? ` · ${ollamaConnectionResult.error}` : ""}`;
 
+  const [promptStatus, setPromptStatus] = useState<string | null>(null);
+
+  const handlePromptSubmit = useCallback(
+    async (prompt: string) => {
+      setPromptStatus("Enviando prompt a Ollama...");
+
+      try {
+        await sendPromptToOllama({
+          host: ollamaHost,
+          model: selectedModel,
+          prompt,
+        });
+
+        setPromptStatus("Prompt enviado a Ollama.");
+      } catch (error_) {
+        const message =
+          error_ instanceof Error
+            ? error_.message
+            : "Error desconocido enviando prompt a Ollama";
+
+        setPromptStatus(`Error enviando prompt: ${message}`);
+      }
+    },
+    [ollamaHost, selectedModel],
+  );
+
   return (
     // src/app.tsx
 
@@ -46,7 +74,11 @@ export function App() {
       footerLineBRightText={footerLineBRightText}>
       <Box width="100%" flexDirection="column" alignItems="center">
         {activeView === "home" ? (
-          <HomeScreen onSlashCommand={handleSlashCommand} />
+          <HomeScreen
+            onSlashCommand={handleSlashCommand}
+            onPromptSubmit={handlePromptSubmit}
+            promptStatus={promptStatus}
+          />
         ) : null}
 
         {activeView === "config" ? (
