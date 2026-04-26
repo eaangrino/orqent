@@ -32,6 +32,7 @@ type HomeScreenProps = {
     prompt: string,
     history: OllamaChatMessage[],
     onToken: (token: string) => void,
+    onStatus: (status: string) => void,
   ) => Promise<string>;
   promptStatus: string | null;
 };
@@ -123,23 +124,6 @@ export function HomeScreen({
       setSelectedCommandIndex(0);
     }
   }, [filteredSlashCommands.length, selectedCommandIndex]);
-
-  useEffect(() => {
-    if (!state.activeAssistantMessageId || !promptStatus) {
-      return;
-    }
-
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === state.activeAssistantMessageId
-          ? {
-              ...message,
-              status: promptStatus,
-            }
-          : message,
-      ),
-    );
-  }, [promptStatus, setMessages, state.activeAssistantMessageId]);
 
   useInput((input, key) => {
     if (!state.prompt.trim().startsWith("/")) {
@@ -234,6 +218,19 @@ export function HomeScreen({
       status: promptStatus ?? "Sending...",
     };
 
+    const updateAssistantStatus = (status: string) => {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                status,
+              }
+            : message,
+        ),
+      );
+    };
+
     setState((current) => ({
       ...current,
       prompt: "",
@@ -245,18 +242,23 @@ export function HomeScreen({
 
     const chatHistory = toOllamaChatHistory(messages);
 
-    void onPromptSubmit(normalized, chatHistory, (token) => {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === assistantMessageId
-            ? {
-                ...message,
-                content: `${message.content}${token}`,
-              }
-            : message,
-        ),
-      );
-    })
+    void onPromptSubmit(
+      normalized,
+      chatHistory,
+      (token) => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: `${message.content}${token}`,
+                }
+              : message,
+          ),
+        );
+      },
+      updateAssistantStatus,
+    )
       .then((response) => {
         setMessages((current) =>
           current.map((message) =>

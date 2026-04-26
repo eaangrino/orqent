@@ -267,6 +267,7 @@ export function App() {
       prompt: string,
       history: OllamaChatMessage[],
       onToken: (token: string) => void,
+      onStatus: (status: string) => void,
     ) => {
       if (!isOllamaConfigHydrated) {
         throw new Error("The Ollama configuration is still loading.");
@@ -278,8 +279,13 @@ export function App() {
 
       void onToken;
 
+      const updatePromptStatus = (status: string) => {
+        setPromptStatus(status);
+        onStatus(status);
+      };
+
       setHasStartedConversation(true);
-      setPromptStatus(`Generating a response with ${activeModel}...`);
+      updatePromptStatus(`Generating a response with ${activeModel}...`);
 
       await appendTranscriptEntry(sessionId, {
         role: "user",
@@ -296,7 +302,7 @@ export function App() {
       });
 
       if (contextPlan.shouldCompact) {
-        setPromptStatus("Compacting context...");
+        updatePromptStatus("Compacting context...");
 
         if (contextPlan.messagesToCompact.length > 0) {
           effectiveSummary = await compactChatHistoryWithOllama({
@@ -327,7 +333,7 @@ export function App() {
           });
         }
 
-        setPromptStatus(`Generating a response with ${activeModel}...`);
+        updatePromptStatus(`Generating a response with ${activeModel}...`);
       }
 
       const liveHistory = contextPlan.shouldCompact
@@ -346,7 +352,7 @@ export function App() {
       ].join("\n");
 
       try {
-        setPromptStatus(`Analyzing request with ${activeModel}...`);
+        updatePromptStatus(`Analyzing request with ${activeModel}...`);
 
         let modelMessages: OllamaChatMessage[] = [
           ...liveHistory,
@@ -412,12 +418,12 @@ export function App() {
 
           if (toolRoundsUsed >= MAX_TOOL_CALL_ROUNDS_PER_PROMPT) {
             stoppedByToolRoundLimit = true;
-            setPromptStatus("Tool calling stopped by round limit.");
+            updatePromptStatus("Tool calling stopped by round limit.");
             finalResponse = formatToolRoundLimitResponse();
             break;
           }
 
-          setPromptStatus(
+          updatePromptStatus(
             `Tool requested: ${toolCallParseResult.toolCall.toolName}. Executing...`,
           );
 
@@ -455,7 +461,7 @@ export function App() {
             result: toolExecution.executionResult,
           });
 
-          setPromptStatus(
+          updatePromptStatus(
             toolExecution.executionResult.ok
               ? `Tool executed: ${toolExecution.toolCall.toolName}. Continuing...`
               : `Tool failed or was blocked: ${toolExecution.toolCall.toolName}. Continuing...`,
@@ -497,7 +503,7 @@ export function App() {
                 },
         });
 
-        setPromptStatus(
+        updatePromptStatus(
           stoppedByToolRoundLimit
             ? "Response stopped by tool round limit."
             : executedToolNames.length > 0
@@ -521,7 +527,7 @@ export function App() {
           },
         });
 
-        setPromptStatus(`Error generating response: ${message}`);
+        updatePromptStatus(`Error generating response: ${message}`);
         throw new Error(message);
       }
     },
