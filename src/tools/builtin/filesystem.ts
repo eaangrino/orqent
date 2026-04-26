@@ -626,6 +626,8 @@ const IGNORED_DIRECTORIES = new Set([
   ".next",
   ".turbo",
   ".cache",
+  "venv",
+  ".venv",
 ]);
 
 function normalizeSearchLimit(
@@ -920,7 +922,7 @@ export const filesystemListTool: ToolDefinition<
   permissions: [ "filesystem:read" ],
   requiresConfirmation: false,
   isReadOnly: true,
-  timeoutMs: 10_000,
+  timeoutMs: 15_000,
   retry: {
     maxAttempts: 1,
     delayMs: 0,
@@ -956,7 +958,7 @@ export const filesystemReadTool: ToolDefinition<
   permissions: [ "filesystem:read" ],
   requiresConfirmation: false,
   isReadOnly: true,
-  timeoutMs: 10_000,
+  timeoutMs: 15_000,
   retry: {
     maxAttempts: 1,
     delayMs: 0,
@@ -1000,7 +1002,7 @@ export const filesystemWriteTool: ToolDefinition<
   permissions: [ "filesystem:write" ],
   requiresConfirmation: true,
   isReadOnly: false,
-  timeoutMs: 10_000,
+  timeoutMs: 15_000,
   retry: {
     maxAttempts: 1,
     delayMs: 0,
