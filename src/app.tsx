@@ -1,4 +1,4 @@
-import { Box } from "ink";
+import { Box, useInput } from "ink";
 import { Layout } from "./components/layout.js";
 import { useAppShell } from "./shell/app-shell/use-app-shell.js";
 import { useOllamaConnection } from "./models/ollama/use-ollama-connection.js";
@@ -6,7 +6,7 @@ import { useOllamaModels } from "./models/ollama/use-ollama-models.js";
 import { ConfigSelectScreen } from "./screens/config-select.js";
 import { HomeScreen, type ChatMessage } from "./screens/home.js";
 import { ModelSelectScreen } from "./screens/model-select.js";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_ORQENT_SYSTEM_PROMPT,
   buildEffectiveSystemPrompt,
@@ -28,7 +28,12 @@ import {
 import { GenerationOptionsScreen } from "./screens/generation-options.js";
 import { ThinkingModeScreen } from "./screens/thinking-mode.js";
 import { PermissionModeScreen } from "./screens/permission-mode.js";
-import { defaultToolRegistry, type ToolActionLogEntry } from "./tools/index.js";
+import {
+  defaultToolRegistry,
+  type ToolActionLogEntry,
+  type ToolConfirmationDecision,
+  type ToolConfirmationRequest,
+} from "./tools/index.js";
 
 const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
 
@@ -114,6 +119,23 @@ async function persistToolActionEntry(
   });
 }
 
+type PendingToolConfirmation = {
+  request: ToolConfirmationRequest;
+  resolve: (decision: ToolConfirmationDecision) => void;
+};
+
+function formatToolConfirmationPrompt(
+  request: ToolConfirmationRequest,
+): string {
+  return [
+    `Tool requires confirmation: ${request.toolName}`,
+    `Risk: ${request.risk}`,
+    `Permissions: ${request.permissions.join(", ") || "none"}`,
+    `Reason: ${request.reason}`,
+    "Press y to allow or n to deny.",
+  ].join(" · ");
+}
+
 export function App() {
   // src/app.tsx
 
@@ -155,6 +177,13 @@ export function App() {
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
   const [sessionId] = useState(() => createSessionId());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  const [pendingToolConfirmation, setPendingToolConfirmation] =
+    useState<PendingToolConfirmation | null>(null);
+
+  const pendingToolConfirmationRef = useRef<PendingToolConfirmation | null>(
+    null,
+  );
 
   const [systemPrompt, setSystemPrompt] = useState(
     DEFAULT_ORQENT_SYSTEM_PROMPT,
@@ -198,7 +227,7 @@ export function App() {
         return;
       }
 
-      setPromptStatus(`Modelo cambiado: ${previousModel} → ${nextModel}`);
+      setPromptStatus(`Model switched: ${previousModel} → ${nextModel}`);
 
       void appendTranscriptEntry(sessionId, {
         role: "system",
@@ -212,6 +241,25 @@ export function App() {
       });
     },
     [activeModel, handleSelectModel, sessionId],
+  );
+
+  const handleConfirmToolExecution = useCallback(
+    async (
+      request: ToolConfirmationRequest,
+    ): Promise<ToolConfirmationDecision> => {
+      setPromptStatus(formatToolConfirmationPrompt(request));
+
+      return new Promise<ToolConfirmationDecision>((resolve) => {
+        const pendingConfirmation: PendingToolConfirmation = {
+          request,
+          resolve,
+        };
+
+        pendingToolConfirmationRef.current = pendingConfirmation;
+        setPendingToolConfirmation(pendingConfirmation);
+      });
+    },
+    [],
   );
 
   const handlePromptSubmit = useCallback(
@@ -248,7 +296,7 @@ export function App() {
       });
 
       if (contextPlan.shouldCompact) {
-        setPromptStatus("Compactando contexto...");
+        setPromptStatus("Compacting context...");
 
         if (contextPlan.messagesToCompact.length > 0) {
           effectiveSummary = await compactChatHistoryWithOllama({
@@ -331,8 +379,8 @@ export function App() {
             generationOptions,
             thinkingMode,
             onToken: () => {
-              // Respuesta interna: puede contener tool call XML.
-              // No se muestra directamente en pantalla.
+              // Internal response: may contain tool call XML.
+              // Not displayed directly on screen.
             },
           });
 
@@ -379,6 +427,7 @@ export function App() {
             sessionId,
             cwd: process.cwd(),
             permissionPolicy,
+            confirmToolExecution: handleConfirmToolExecution,
             toolActionLogger: persistToolActionEntry,
             parseOptions: {
               allowSurroundingText: true,
@@ -487,14 +536,57 @@ export function App() {
       permissionPolicy,
       generationOptions,
       thinkingMode,
+      handleConfirmToolExecution,
     ],
+  );
+
+  useInput(
+    (input) => {
+      const pendingConfirmation = pendingToolConfirmationRef.current;
+
+      if (!pendingConfirmation) {
+        return;
+      }
+
+      const normalizedInput = input.trim().toLowerCase();
+
+      if (normalizedInput === "y" || normalizedInput === "s") {
+        pendingConfirmation.resolve({
+          allowed: true,
+        });
+
+        pendingToolConfirmationRef.current = null;
+        setPendingToolConfirmation(null);
+        setPromptStatus(
+          `Tool approved: ${pendingConfirmation.request.toolName}. Executing...`,
+        );
+        return;
+      }
+
+      if (normalizedInput === "n") {
+        pendingConfirmation.resolve({
+          allowed: false,
+          reason:
+            "User denied tool execution from the TUI confirmation prompt.",
+        });
+
+        pendingToolConfirmationRef.current = null;
+        setPendingToolConfirmation(null);
+        setPromptStatus(
+          `Tool denied: ${pendingConfirmation.request.toolName}.`,
+        );
+      }
+    },
+    {
+      isActive: pendingToolConfirmation !== null,
+    },
   );
 
   return (
     // src/app.tsx
 
     <Layout
-      topLeftText="soy izquierda"
+      topLeftText="Powered by eaangrino"
       topRightText={`vista: ${activeView}`}
       footerLineA={footerLineA}
       footerLineB={`${footerLineB} · ${ollamaConnectionLabel}`}
