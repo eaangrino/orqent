@@ -206,6 +206,15 @@ export function App() {
     null,
   );
 
+  const activePromptStatusHandlerRef = useRef<
+    ((status: string) => void) | null
+  >(null);
+
+  const updateVisiblePromptStatus = useCallback((status: string) => {
+    setPromptStatus(status);
+    activePromptStatusHandlerRef.current?.(status);
+  }, []);
+
   const [systemPrompt, setSystemPrompt] = useState(
     DEFAULT_ORQENT_SYSTEM_PROMPT,
   );
@@ -268,7 +277,7 @@ export function App() {
     async (
       request: ToolConfirmationRequest,
     ): Promise<ToolConfirmationDecision> => {
-      setPromptStatus(formatToolConfirmationPrompt(request));
+      updateVisiblePromptStatus(formatToolConfirmationPrompt(request));
 
       return new Promise<ToolConfirmationDecision>((resolve) => {
         const pendingConfirmation: PendingToolConfirmation = {
@@ -280,7 +289,7 @@ export function App() {
         setPendingToolConfirmation(pendingConfirmation);
       });
     },
-    [],
+    [updateVisiblePromptStatus],
   );
 
   const handlePromptSubmit = useCallback(
@@ -300,9 +309,10 @@ export function App() {
 
       void onToken;
 
+      activePromptStatusHandlerRef.current = onStatus;
+
       const updatePromptStatus = (status: string) => {
-        setPromptStatus(status);
-        onStatus(status);
+        updateVisiblePromptStatus(status);
       };
 
       setHasStartedConversation(true);
@@ -552,6 +562,8 @@ export function App() {
 
         updatePromptStatus(`Error generating response: ${message}`);
         throw new Error(message);
+      } finally {
+        activePromptStatusHandlerRef.current = null;
       }
     },
     [
@@ -566,6 +578,7 @@ export function App() {
       generationOptions,
       thinkingMode,
       handleConfirmToolExecution,
+      updateVisiblePromptStatus,
     ],
   );
 
@@ -586,7 +599,7 @@ export function App() {
 
         pendingToolConfirmationRef.current = null;
         setPendingToolConfirmation(null);
-        setPromptStatus(
+        updateVisiblePromptStatus(
           `Tool approved: ${pendingConfirmation.request.toolName}. Executing...`,
         );
         return;
@@ -601,7 +614,7 @@ export function App() {
 
         pendingToolConfirmationRef.current = null;
         setPendingToolConfirmation(null);
-        setPromptStatus(
+        updateVisiblePromptStatus(
           `Tool denied: ${pendingConfirmation.request.toolName}.`,
         );
       }
