@@ -14,11 +14,13 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  status?: string | null;
 };
 
 type HomeUiState = {
   prompt: string;
   isSubmitting: boolean;
+  activeAssistantMessageId: string | null;
 };
 
 type HomeScreenProps = {
@@ -42,6 +44,7 @@ type SlashCommandItem = {
 const initialState: HomeUiState = {
   prompt: "",
   isSubmitting: false,
+  activeAssistantMessageId: null,
 };
 
 const slashCommands: SlashCommandItem[] = [
@@ -120,6 +123,23 @@ export function HomeScreen({
       setSelectedCommandIndex(0);
     }
   }, [filteredSlashCommands.length, selectedCommandIndex]);
+
+  useEffect(() => {
+    if (!state.activeAssistantMessageId || !promptStatus) {
+      return;
+    }
+
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === state.activeAssistantMessageId
+          ? {
+              ...message,
+              status: promptStatus,
+            }
+          : message,
+      ),
+    );
+  }, [promptStatus, setMessages, state.activeAssistantMessageId]);
 
   useInput((input, key) => {
     if (!state.prompt.trim().startsWith("/")) {
@@ -211,12 +231,14 @@ export function HomeScreen({
       id: assistantMessageId,
       role: "assistant",
       content: "",
+      status: promptStatus ?? "Sending...",
     };
 
     setState((current) => ({
       ...current,
       prompt: "",
       isSubmitting: true,
+      activeAssistantMessageId: assistantMessageId,
     }));
 
     setMessages((current) => [...current, userMessage, assistantMessage]);
@@ -271,6 +293,7 @@ export function HomeScreen({
         setState((current) => ({
           ...current,
           isSubmitting: false,
+          activeAssistantMessageId: null,
         }));
       });
   };
@@ -299,9 +322,15 @@ export function HomeScreen({
                 paddingX={1}
                 paddingY={1}
                 backgroundColor={isUser ? "#4a4a4a" : "#2f2f2f"}>
-                <Text color={isUser ? "cyan" : "green"} bold>
-                  {isUser ? "Tú" : "Orqent"}
-                </Text>
+                <Box justifyContent="space-between">
+                  <Text color={isUser ? "cyan" : "green"} bold>
+                    {isUser ? "Tú" : "Orqent"}
+                  </Text>
+
+                  {!isUser && message.status ? (
+                    <Text dimColor>{message.status}</Text>
+                  ) : null}
+                </Box>
 
                 <Text color="white">{message.content}</Text>
               </Box>
@@ -361,13 +390,6 @@ export function HomeScreen({
       ) : null}
 
       <Box marginTop={1} flexDirection="column" alignItems="center">
-        <Text dimColor>
-          <Text dimColor>
-            {state.isSubmitting
-              ? (promptStatus ?? "Sending...")
-              : (promptStatus ?? "Composer ready.")}
-          </Text>
-        </Text>
         <Text dimColor>
           / for commands · ↑/↓ to navigate · Enter to execute
         </Text>
