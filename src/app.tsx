@@ -10,16 +10,109 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_ORQENT_SYSTEM_PROMPT,
   buildEffectiveSystemPrompt,
+  buildToolCallProtocolInstructions,
+  buildToolResultMessage,
   compactChatHistoryWithOllama,
+  executeModelToolCall,
   loadSystemPrompt,
+  parseModelToolCall,
   planContextUsage,
   streamChatFromOllama,
   type OllamaChatMessage,
 } from "./runtime/index.js";
-import { appendTranscriptEntry, createSessionId } from "./sessions/index.js";
+import {
+  appendToolActionEntry,
+  appendTranscriptEntry,
+  createSessionId,
+} from "./sessions/index.js";
 import { GenerationOptionsScreen } from "./screens/generation-options.js";
 import { ThinkingModeScreen } from "./screens/thinking-mode.js";
 import { PermissionModeScreen } from "./screens/permission-mode.js";
+import { defaultToolRegistry, type ToolActionLogEntry } from "./tools/index.js";
+
+const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
+
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return JSON.stringify({
+      error: "Value could not be serialized.",
+    });
+  }
+}
+
+function formatToolExecutionFallbackResponse({
+  toolName,
+  result,
+}: {
+  toolName: string;
+  result: Awaited<ReturnType<typeof executeModelToolCall>>;
+}): string | null {
+  if (result.kind === "none") {
+    return null;
+  }
+
+  if (result.kind === "invalid_tool_call") {
+    return [
+      "The model attempted to call a tool, but the format was invalid.",
+      `Tool name: ${toolName}`,
+      "",
+      `Error: ${result.parseResult.error}`,
+    ].join("\n");
+  }
+
+  if (result.executionResult.ok) {
+    return [
+      `Tool executed: ${toolName}`,
+      "",
+      "Result:",
+      "```json",
+      safeJsonStringify(result.executionResult.result),
+      "```",
+    ].join("\n");
+  }
+
+  return [
+    `Tool blocked or failed: ${toolName}`,
+    "",
+    `Code: ${result.executionResult.error.code}`,
+    `Message: ${result.executionResult.error.message}`,
+  ].join("\n");
+}
+
+function formatToolRoundLimitResponse(): string {
+  return [
+    "The model attempted to request another tool, but Orqent stopped the cycle.",
+    "",
+    `Current limit: ${MAX_TOOL_CALL_ROUNDS_PER_PROMPT} round of tool calling per prompt.`,
+    "",
+    "This prevents execution loops while the agent loop continues to mature.",
+  ].join("\n");
+}
+
+async function persistToolActionEntry(
+  entry: ToolActionLogEntry,
+): Promise<void> {
+  await appendToolActionEntry(entry.sessionId, {
+    toolName: entry.toolName,
+    cwd: entry.cwd,
+    input: entry.input,
+    status: entry.status,
+    ok: entry.ok,
+    durationMs: entry.durationMs,
+    risk: entry.risk,
+    permissions: entry.permissions,
+    requiresConfirmation: entry.requiresConfirmation,
+    isReadOnly: entry.isReadOnly,
+    permissionEffect: entry.permissionEffect,
+    permissionReason: entry.permissionReason,
+    confirmation: entry.confirmation,
+    errorCode: entry.errorCode,
+    errorMessage: entry.errorMessage,
+    metadata: entry.metadata,
+  });
+}
 
 export function App() {
   // src/app.tsx
@@ -44,8 +137,6 @@ export function App() {
     handleSelectModel,
     handleSlashCommand,
   } = useAppShell();
-
-  void permissionPolicy; // Temporal typed export to avoid unused variable warning, will be used in future iterations when permissions are enforced.
 
   const { models, isLoading, error } = useOllamaModels(ollamaHost);
 
@@ -136,6 +227,9 @@ export function App() {
       if (!activeModel) {
         throw new Error("No active model selected. Use /model.");
       }
+
+      void onToken;
+
       setHasStartedConversation(true);
       setPromptStatus(`Generating a response with ${activeModel}...`);
 
@@ -192,40 +286,177 @@ export function App() {
         ? contextPlan.liveHistory
         : history.slice(effectiveCompactedHistoryLength);
 
-      const effectiveSystemPrompt = buildEffectiveSystemPrompt({
+      const baseEffectiveSystemPrompt = buildEffectiveSystemPrompt({
         systemPrompt,
         contextSummary: effectiveSummary,
       });
 
+      const effectiveSystemPrompt = [
+        baseEffectiveSystemPrompt,
+        "",
+        buildToolCallProtocolInstructions(defaultToolRegistry.list()),
+      ].join("\n");
+
       try {
-        const result = await streamChatFromOllama({
-          host: ollamaHost,
-          model: activeModel,
-          messages: [
-            {
-              role: "system",
-              content: effectiveSystemPrompt,
+        setPromptStatus(`Analyzing request with ${activeModel}...`);
+
+        let modelMessages: OllamaChatMessage[] = [
+          ...liveHistory,
+          {
+            role: "user",
+            content: prompt,
+          },
+        ];
+
+        let finalResponse = "";
+        let finalModel = activeModel;
+        let lastToolExecution: Awaited<
+          ReturnType<typeof executeModelToolCall>
+        > | null = null;
+        let toolRoundsUsed = 0;
+        let stoppedByToolRoundLimit = false;
+        const executedToolNames: string[] = [];
+
+        while (true) {
+          const result = await streamChatFromOllama({
+            host: ollamaHost,
+            model: activeModel,
+            messages: [
+              {
+                role: "system",
+                content: effectiveSystemPrompt,
+              },
+              ...modelMessages,
+            ],
+            generationOptions,
+            thinkingMode,
+            onToken: () => {
+              // Respuesta interna: puede contener tool call XML.
+              // No se muestra directamente en pantalla.
             },
-            ...liveHistory,
-            {
-              role: "user",
-              content: prompt,
+          });
+
+          finalModel = result.model;
+
+          const toolCallParseResult = parseModelToolCall(result.response, {
+            allowSurroundingText: true,
+          });
+
+          if (toolCallParseResult.kind === "none") {
+            finalResponse = result.response;
+            break;
+          }
+
+          if (toolCallParseResult.kind === "invalid") {
+            lastToolExecution = {
+              kind: "invalid_tool_call",
+              parseResult: toolCallParseResult,
+            };
+
+            finalResponse =
+              formatToolExecutionFallbackResponse({
+                toolName: "unknown",
+                result: lastToolExecution,
+              }) ?? result.response;
+
+            break;
+          }
+
+          if (toolRoundsUsed >= MAX_TOOL_CALL_ROUNDS_PER_PROMPT) {
+            stoppedByToolRoundLimit = true;
+            setPromptStatus("Tool calling stopped by round limit.");
+            finalResponse = formatToolRoundLimitResponse();
+            break;
+          }
+
+          setPromptStatus(
+            `Tool requested: ${toolCallParseResult.toolCall.toolName}. Executing...`,
+          );
+
+          const toolExecution = await executeModelToolCall({
+            modelResponse: result.response,
+            registry: defaultToolRegistry,
+            sessionId,
+            cwd: process.cwd(),
+            permissionPolicy,
+            toolActionLogger: persistToolActionEntry,
+            parseOptions: {
+              allowSurroundingText: true,
             },
-          ],
-          generationOptions,
-          thinkingMode,
-          onToken,
-        });
+          });
+
+          lastToolExecution = toolExecution;
+
+          if (toolExecution.kind !== "tool_call_executed") {
+            finalResponse =
+              formatToolExecutionFallbackResponse({
+                toolName: "unknown",
+                result: toolExecution,
+              }) ?? result.response;
+
+            break;
+          }
+
+          toolRoundsUsed++;
+          executedToolNames.push(toolExecution.toolCall.toolName);
+
+          const toolResultMessage = buildToolResultMessage({
+            toolName: toolExecution.toolCall.toolName,
+            input: toolExecution.toolCall.input,
+            result: toolExecution.executionResult,
+          });
+
+          setPromptStatus(
+            toolExecution.executionResult.ok
+              ? `Tool executed: ${toolExecution.toolCall.toolName}. Continuing...`
+              : `Tool failed or was blocked: ${toolExecution.toolCall.toolName}. Continuing...`,
+          );
+
+          modelMessages = [
+            ...modelMessages,
+            {
+              role: "assistant",
+              content: result.response,
+            },
+            toolResultMessage,
+          ];
+        }
+
+        if (!finalResponse.trim()) {
+          finalResponse = "(empty response)";
+        }
 
         await appendTranscriptEntry(sessionId, {
           role: "assistant",
-          content: result.response,
-          model: result.model,
+          content: finalResponse,
+          model: finalModel,
+          metadata:
+            lastToolExecution === null && executedToolNames.length === 0
+              ? undefined
+              : {
+                  type: "tool_call_execution",
+                  toolExecutionKind: stoppedByToolRoundLimit
+                    ? "tool_round_limit_reached"
+                    : lastToolExecution?.kind,
+                  toolName:
+                    lastToolExecution?.kind === "tool_call_executed"
+                      ? lastToolExecution.toolCall.toolName
+                      : null,
+                  toolNames: executedToolNames,
+                  toolRoundsUsed,
+                  maxToolCallRounds: MAX_TOOL_CALL_ROUNDS_PER_PROMPT,
+                },
         });
 
-        setPromptStatus("Response received.");
+        setPromptStatus(
+          stoppedByToolRoundLimit
+            ? "Response stopped by tool round limit."
+            : executedToolNames.length > 0
+              ? `Response generated with tools: ${executedToolNames.join(", ")}`
+              : "Response received.",
+        );
 
-        return result.response;
+        return finalResponse;
       } catch (error_) {
         const message =
           error_ instanceof Error
@@ -253,6 +484,7 @@ export function App() {
       systemPrompt,
       contextSummary,
       compactedHistoryLength,
+      permissionPolicy,
       generationOptions,
       thinkingMode,
     ],
