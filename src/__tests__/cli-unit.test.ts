@@ -8,7 +8,7 @@ describe("runCli", () => {
     const resetStateImpl = vi.fn();
 
     await runCli({
-      argv: ["--help"],
+      argv: [ "--help" ],
       logImpl,
       runAppImpl,
       resetStateImpl,
@@ -16,7 +16,7 @@ describe("runCli", () => {
     });
 
     expect(logImpl).toHaveBeenCalledTimes(1);
-    expect(logImpl.mock.calls[0]?.[0]).toContain("Usage");
+    expect(logImpl.mock.calls[ 0 ]?.[ 0 ]).toContain("Usage");
     expect(runAppImpl).not.toHaveBeenCalled();
     expect(resetStateImpl).not.toHaveBeenCalled();
   });
@@ -27,7 +27,7 @@ describe("runCli", () => {
     const resetStateImpl = vi.fn();
 
     await runCli({
-      argv: ["--version"],
+      argv: [ "--version" ],
       logImpl,
       runAppImpl,
       resetStateImpl,
@@ -45,7 +45,7 @@ describe("runCli", () => {
     const resetStateImpl = vi.fn().mockResolvedValue(undefined);
 
     await runCli({
-      argv: ["--reset"],
+      argv: [ "--reset" ],
       logImpl,
       runAppImpl,
       resetStateImpl,
@@ -54,8 +54,51 @@ describe("runCli", () => {
 
     expect(resetStateImpl).toHaveBeenCalledTimes(1);
     expect(logImpl).toHaveBeenCalledTimes(1);
-    expect(logImpl.mock.calls[0]?.[0]).toContain("Configuración reiniciada:");
+    expect(logImpl.mock.calls[ 0 ]?.[ 0 ]).toContain("Configuración reiniciada:");
     expect(runAppImpl).not.toHaveBeenCalled();
+  });
+
+  it("arranca la TUI con resumeSessionId cuando recibe resume <sessionId>", async () => {
+    const logImpl = vi.fn();
+    const runAppImpl = vi.fn();
+    const resetStateImpl = vi.fn();
+
+    await runCli({
+      argv: [
+        "resume",
+        "session_20260428010236_6c7ce3f2-264d-41b7-a72b-898fd528e7df",
+      ],
+      logImpl,
+      runAppImpl,
+      resetStateImpl,
+      packageVersion: "1.0.0",
+    });
+
+    expect(runAppImpl).toHaveBeenCalledTimes(1);
+    expect(runAppImpl).toHaveBeenCalledWith({
+      resumeSessionId:
+        "session_20260428010236_6c7ce3f2-264d-41b7-a72b-898fd528e7df",
+    });
+    expect(logImpl).not.toHaveBeenCalled();
+    expect(resetStateImpl).not.toHaveBeenCalled();
+  });
+
+  it("muestra uso cuando resume no recibe sessionId", async () => {
+    const logImpl = vi.fn();
+    const runAppImpl = vi.fn();
+    const resetStateImpl = vi.fn();
+
+    await runCli({
+      argv: [ "resume" ],
+      logImpl,
+      runAppImpl,
+      resetStateImpl,
+      packageVersion: "1.0.0",
+    });
+
+    expect(logImpl).toHaveBeenCalledWith("Using: orqent resume <sessionId>");
+    expect(runAppImpl).not.toHaveBeenCalled();
+    expect(resetStateImpl).not.toHaveBeenCalled();
   });
 
   it("arranca la TUI cuando no recibe flags", async () => {

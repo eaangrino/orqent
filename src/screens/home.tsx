@@ -71,6 +71,10 @@ const slashCommands: SlashCommandItem[] = [
     description: "Configure permission mode",
   },
   {
+    label: "/exit",
+    description: "Exit Orqent and print resume command",
+  },
+  {
     label: "/home",
     description: "Return to home",
   },

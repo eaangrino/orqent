@@ -24,6 +24,7 @@ import {
   appendToolActionEntry,
   appendTranscriptEntry,
   createSessionId,
+  readTranscriptEntries,
   upsertChatSessionMetadata,
 } from "./sessions/index.js";
 import { GenerationOptionsScreen } from "./screens/generation-options.js";
@@ -77,6 +78,29 @@ function createMessagePreview(content: string, maxLength = 120): string {
   }
 
   return `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function createChatMessageId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function transcriptEntriesToChatMessages(
+  entries: Awaited<ReturnType<typeof readTranscriptEntries>>,
+): ChatMessage[] {
+  return entries.flatMap((entry) => {
+    if (entry.role !== "user" && entry.role !== "assistant") {
+      return [];
+    }
+
+    return [
+      {
+        id: entry.id || createChatMessageId(),
+        role: entry.role,
+        content: entry.content,
+        status: null,
+      },
+    ];
+  });
 }
 
 function formatToolExecutionFallbackResponse({
@@ -168,7 +192,13 @@ function formatToolConfirmationPrompt(
   ].join(" · ");
 }
 
-export function App() {
+type AppProps = {
+  resumeSessionId?: string;
+  onSessionReady?: (sessionId: string) => void;
+  onExit?: () => void;
+};
+
+export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
   // src/app.tsx
 
   const {
@@ -207,7 +237,15 @@ export function App() {
 
   const [promptStatus, setPromptStatus] = useState<string | null>(null);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
-  const [sessionId] = useState(() => createSessionId());
+  const [sessionId, setSessionId] = useState(
+    () => resumeSessionId ?? createSessionId(),
+  );
+
+  useEffect(() => {
+    onSessionReady?.(sessionId);
+  }, [onSessionReady, sessionId]);
+
+  const [isSessionHydrated, setIsSessionHydrated] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const persistedMessageCountRef = useRef(0);
 
@@ -279,11 +317,46 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    async function hydrateRequestedSession() {
+      if (!resumeSessionId) {
+        setIsSessionHydrated(true);
+        return;
+      }
+
+      const transcriptEntries = await readTranscriptEntries(resumeSessionId);
+
+      if (isCancelled) {
+        return;
+      }
+
+      setSessionId(resumeSessionId);
+      setMessages(transcriptEntriesToChatMessages(transcriptEntries));
+      persistedMessageCountRef.current = transcriptEntries.filter(
+        (entry) => entry.role === "user" || entry.role === "assistant",
+      ).length;
+      setHasStartedConversation(transcriptEntries.length > 0);
+      setIsSessionHydrated(true);
+    }
+
+    void hydrateRequestedSession();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [resumeSessionId]);
+
+  useEffect(() => {
+    if (!isSessionHydrated) {
+      return;
+    }
+
     void persistCurrentSessionMetadata({
       model: activeModel || null,
       lastMessagePreview: null,
     });
-  }, [activeModel, persistCurrentSessionMetadata]);
+  }, [activeModel, isSessionHydrated, persistCurrentSessionMetadata]);
 
   const handleModelSwitch = useCallback(
     (nextModel: string) => {
@@ -330,6 +403,20 @@ export function App() {
     [updateVisiblePromptStatus],
   );
 
+  const handleAppSlashCommand = useCallback(
+    (command: string) => {
+      const normalizedCommand = command.trim().toLowerCase();
+
+      if (normalizedCommand === "/exit" || normalizedCommand === "/quit") {
+        onExit?.();
+        return true;
+      }
+
+      return handleSlashCommand(command);
+    },
+    [handleSlashCommand, onExit],
+  );
+
   const handlePromptSubmit = useCallback(
     async (
       prompt: string,
@@ -340,6 +427,10 @@ export function App() {
     ) => {
       if (!isOllamaConfigHydrated) {
         throw new Error("The Ollama configuration is still loading.");
+      }
+
+      if (!isSessionHydrated) {
+        throw new Error("The chat session is still loading.");
       }
 
       if (!activeModel) {
@@ -645,8 +736,15 @@ export function App() {
       thinkingMode,
       handleConfirmToolExecution,
       updateVisiblePromptStatus,
+      isSessionHydrated,
     ],
   );
+
+  useInput((input, key) => {
+    if (key.ctrl && input.toLowerCase() === "c") {
+      onExit?.();
+    }
+  });
 
   useInput(
     (input) => {
@@ -706,7 +804,7 @@ export function App() {
             messages={messages}
             setMessages={setMessages}
             contextStatus={contextStatus}
-            onSlashCommand={handleSlashCommand}
+            onSlashCommand={handleAppSlashCommand}
             onPromptSubmit={handlePromptSubmit}
             promptStatus={promptStatus}
           />

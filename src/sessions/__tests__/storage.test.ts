@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   appendToolActionEntry,
+  appendTranscriptEntry,
   getChatSessionIndexFilePath,
   getToolActionsFilePath,
   listChatSessionMetadata,
+  readTranscriptEntries,
   upsertChatSessionMetadata,
 } from "../storage.js";
 
@@ -171,5 +173,37 @@ describe("session tool action storage", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.confirmation).toBe("allowed");
     expect(filePath).toContain("session_test.tools.jsonl");
+  });
+
+  it("readTranscriptEntries devuelve lista vacía cuando no existe transcript", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-session-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await expect(readTranscriptEntries("session/missing")).resolves.toEqual([]);
+  });
+
+  it("readTranscriptEntries reconstruye entradas válidas del transcript JSONL", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-session-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const userEntry = await appendTranscriptEntry("session/test", {
+      role: "user",
+      content: "Hola",
+      model: "gemma4:e4b",
+    });
+
+    const assistantEntry = await appendTranscriptEntry("session/test", {
+      role: "assistant",
+      content: "Ok",
+      model: "gemma4:e4b",
+      metadata: {
+        type: "test",
+      },
+    });
+
+    await expect(readTranscriptEntries("session/test")).resolves.toEqual([
+      userEntry,
+      assistantEntry,
+    ]);
   });
 });

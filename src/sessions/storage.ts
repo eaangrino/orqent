@@ -189,6 +189,53 @@ function normalizeChatSessionIndexFile(value: unknown): ChatSessionIndexFile {
   };
 }
 
+function normalizeTranscriptRole(value: unknown): TranscriptRole | null {
+  if (value === "user" || value === "assistant" || value === "system") {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeTranscriptEntry(value: unknown): TranscriptEntry | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const role = normalizeTranscriptRole(value.role);
+
+  if (!role) {
+    return null;
+  }
+
+  if (
+    typeof value.id !== "string" ||
+    !value.id.trim() ||
+    typeof value.sessionId !== "string" ||
+    !value.sessionId.trim() ||
+    typeof value.content !== "string" ||
+    typeof value.createdAt !== "string"
+  ) {
+    return null;
+  }
+
+  const createdAt = new Date(value.createdAt);
+
+  if (Number.isNaN(createdAt.getTime())) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    sessionId: value.sessionId,
+    createdAt: createdAt.toISOString(),
+    role,
+    content: value.content,
+    model: normalizeNullableString(value.model),
+    metadata: isRecord(value.metadata) ? value.metadata : undefined,
+  };
+}
+
 export async function appendTranscriptEntry(
   sessionId: string,
   entry: TranscriptEntryInput,
@@ -307,4 +354,28 @@ export async function upsertChatSessionMetadata(
   ]);
 
   return nextSession;
+}
+
+export async function readTranscriptEntries(
+  sessionId: string,
+): Promise<TranscriptEntry[]> {
+  try {
+    const raw = await readFile(getTranscriptFilePath(sessionId), "utf8");
+
+    return raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as unknown;
+        } catch {
+          return null;
+        }
+      })
+      .map(normalizeTranscriptEntry)
+      .filter((entry): entry is TranscriptEntry => entry !== null);
+  } catch {
+    return [];
+  }
 }

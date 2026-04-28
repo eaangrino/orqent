@@ -9,6 +9,7 @@ import { DEFAULT_OLLAMA_CONFIG } from "./models/ollama/config.js";
 const helpText = `
   Usage
     $ orqent
+    $ orqent resume <sessionId>
 
   Options
     --help     Mostrar ayuda
@@ -17,13 +18,18 @@ const helpText = `
 
   Examples
     $ orqent
+    $ orqent resume session_00000000000000_00000000-0000-0000-0000-000000000000
     $ orqent --reset
 `;
+
+type RunAppOptions = {
+  resumeSessionId?: string;
+};
 
 type CliDeps = {
   argv?: string[];
   packageVersion?: string;
-  runAppImpl?: () => void | Promise<void>;
+  runAppImpl?: (options?: RunAppOptions) => void | Promise<void>;
   resetStateImpl?: () => Promise<void>;
   logImpl?: (message: string) => void;
 };
@@ -70,6 +76,26 @@ export async function runCli(deps: CliDeps = {}) {
       },
     },
   });
+
+  const [ command, value ] = cli.input;
+
+  if (command === "resume") {
+    const resumeSessionId = value?.trim();
+
+    if (!resumeSessionId) {
+      logImpl("Using: orqent resume <sessionId>");
+      return;
+    }
+
+    if (deps.runAppImpl) {
+      await deps.runAppImpl({ resumeSessionId });
+      return;
+    }
+
+    const { runApp } = await import("./run-app.js");
+    runApp({ resumeSessionId });
+    return;
+  }
 
   if (cli.flags.help) {
     logImpl(helpText.trim());
