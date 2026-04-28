@@ -24,6 +24,7 @@ import {
   appendToolActionEntry,
   appendTranscriptEntry,
   createSessionId,
+  upsertChatSessionMetadata,
 } from "./sessions/index.js";
 import { GenerationOptionsScreen } from "./screens/generation-options.js";
 import { ThinkingModeScreen } from "./screens/thinking-mode.js";
@@ -66,6 +67,16 @@ function safeJsonStringify(value: unknown): string {
       error: "Value could not be serialized.",
     });
   }
+}
+
+function createMessagePreview(content: string, maxLength = 120): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 function formatToolExecutionFallbackResponse({
@@ -198,6 +209,7 @@ export function App() {
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
   const [sessionId] = useState(() => createSessionId());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const persistedMessageCountRef = useRef(0);
 
   const [pendingToolConfirmation, setPendingToolConfirmation] =
     useState<PendingToolConfirmation | null>(null);
@@ -214,6 +226,25 @@ export function App() {
     setPromptStatus(status);
     activePromptStatusHandlerRef.current?.(status);
   }, []);
+
+  const persistCurrentSessionMetadata = useCallback(
+    async ({
+      model,
+      lastMessagePreview,
+    }: {
+      model?: string | null;
+      lastMessagePreview?: string | null;
+    }) => {
+      await upsertChatSessionMetadata({
+        id: sessionId,
+        cwd: resolveRuntimeCwd(),
+        model,
+        messageCount: persistedMessageCountRef.current,
+        lastMessagePreview,
+      });
+    },
+    [sessionId],
+  );
 
   const [systemPrompt, setSystemPrompt] = useState(
     DEFAULT_ORQENT_SYSTEM_PROMPT,
@@ -246,6 +277,13 @@ export function App() {
       isCancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    void persistCurrentSessionMetadata({
+      model: activeModel || null,
+      lastMessagePreview: null,
+    });
+  }, [activeModel, persistCurrentSessionMetadata]);
 
   const handleModelSwitch = useCallback(
     (nextModel: string) => {
@@ -298,6 +336,7 @@ export function App() {
       history: OllamaChatMessage[],
       onToken: (token: string) => void,
       onStatus: (status: string) => void,
+      onReplaceContent: (content: string) => void,
     ) => {
       if (!isOllamaConfigHydrated) {
         throw new Error("The Ollama configuration is still loading.");
@@ -306,8 +345,6 @@ export function App() {
       if (!activeModel) {
         throw new Error("No active model selected. Use /model.");
       }
-
-      void onToken;
 
       activePromptStatusHandlerRef.current = onStatus;
 
@@ -322,6 +359,13 @@ export function App() {
         role: "user",
         content: prompt,
         model: activeModel,
+      });
+
+      persistedMessageCountRef.current += 1;
+
+      await persistCurrentSessionMetadata({
+        model: activeModel,
+        lastMessagePreview: createMessagePreview(prompt),
       });
 
       let effectiveSummary = contextSummary;
@@ -405,6 +449,7 @@ export function App() {
         const executedToolNames: string[] = [];
 
         while (true) {
+          let streamedResponse = "";
           const result = await streamChatFromOllama({
             host: ollamaHost,
             model: activeModel,
@@ -417,9 +462,12 @@ export function App() {
             ],
             generationOptions,
             thinkingMode,
-            onToken: () => {
-              // Internal response: may contain tool call XML.
-              // Not displayed directly on screen.
+            onToken: (token) => {
+              streamedResponse += token;
+
+              if (!streamedResponse.includes("<orqent_tool_call")) {
+                onToken(token);
+              }
             },
           });
 
@@ -428,6 +476,10 @@ export function App() {
           const toolCallParseResult = parseModelToolCall(result.response, {
             allowSurroundingText: true,
           });
+
+          if (toolCallParseResult.kind !== "none") {
+            onReplaceContent("");
+          }
 
           if (toolCallParseResult.kind === "none") {
             finalResponse = result.response;
@@ -536,6 +588,13 @@ export function App() {
                 },
         });
 
+        persistedMessageCountRef.current += 1;
+
+        await persistCurrentSessionMetadata({
+          model: finalModel,
+          lastMessagePreview: createMessagePreview(finalResponse),
+        });
+
         updatePromptStatus(
           stoppedByToolRoundLimit
             ? "Response stopped by tool round limit."
@@ -558,6 +617,13 @@ export function App() {
           metadata: {
             error: true,
           },
+        });
+
+        persistedMessageCountRef.current += 1;
+
+        await persistCurrentSessionMetadata({
+          model: activeModel,
+          lastMessagePreview: createMessagePreview(`Error: ${message}`),
         });
 
         updatePromptStatus(`Error generating response: ${message}`);
