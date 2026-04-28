@@ -14,6 +14,7 @@ import type {
   ToolExecutionContext,
   ToolExecutionResult,
   ToolRetryConfig,
+  ToolRuntimeContext,
 } from "./types.js";
 
 export type ExecuteToolInput = {
@@ -24,6 +25,7 @@ export type ExecuteToolInput = {
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  runtime?: ToolRuntimeContext;
   permissionPolicy?: PermissionPolicy;
   confirmToolExecution?: ToolConfirmationHandler;
   toolActionLogger?: ToolActionLogger;
@@ -482,6 +484,7 @@ export async function executeTool({
   cwd,
   timeoutMs,
   signal,
+  runtime,
   permissionPolicy,
   confirmToolExecution,
   toolActionLogger,
@@ -575,6 +578,7 @@ export async function executeTool({
     sessionId,
     cwd: resolvedCwd,
     signal: timeoutSignal.signal,
+    runtime,
   };
 
   try {

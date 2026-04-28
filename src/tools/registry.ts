@@ -6,6 +6,12 @@ import {
 } from "./builtin/filesystem.js";
 import { shellExecuteTool } from "./builtin/shell.js";
 import type { AnyToolDefinition } from "./types.js";
+import {
+  agentCreateDefinitionTool,
+  agentListDefinitionsTool,
+  agentListTasksTool,
+  agentSpawnTool,
+} from "./builtin/agents.js";
 
 function normalizeToolName(name: string): string {
   return name.trim().toLowerCase();
@@ -70,6 +76,10 @@ export const builtinTools: AnyToolDefinition[] = [
   filesystemWriteTool,
   projectSearchTool,
   shellExecuteTool,
+  agentCreateDefinitionTool,
+  agentListDefinitionsTool,
+  agentSpawnTool,
+  agentListTasksTool,
 ];
 
 export const defaultToolRegistry = createToolRegistry(builtinTools);

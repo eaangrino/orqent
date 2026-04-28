@@ -37,6 +37,10 @@ import {
   type ToolConfirmationRequest,
 } from "./tools/index.js";
 import { realpathSync } from "node:fs";
+import {
+  buildAgentCatalogPrompt,
+  listAgentDefinitions,
+} from "./agents/index.js";
 
 const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
 
@@ -511,10 +515,14 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
         contextSummary: effectiveSummary,
       });
 
+      const agentDefinitions = await listAgentDefinitions();
+
       const effectiveSystemPrompt = [
         baseEffectiveSystemPrompt,
         "",
         buildRuntimeContextPrompt(),
+        "",
+        buildAgentCatalogPrompt(agentDefinitions),
         "",
         buildToolCallProtocolInstructions(defaultToolRegistry.list()),
       ].join("\n");
@@ -608,6 +616,12 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
             registry: defaultToolRegistry,
             sessionId,
             cwd: process.cwd(),
+            runtime: {
+              ollamaHost,
+              activeModel,
+              generationOptions,
+              thinkingMode,
+            },
             permissionPolicy,
             confirmToolExecution: handleConfirmToolExecution,
             toolActionLogger: persistToolActionEntry,

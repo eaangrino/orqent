@@ -4,7 +4,9 @@ export type ToolPermission =
   | "filesystem:read"
   | "filesystem:write"
   | "shell:execute"
-  | "project:search";
+  | "project:search"
+  | "agents:read"
+  | "agents:write";
 
 export type ToolJsonSchema = {
   type: "object";
@@ -13,10 +15,18 @@ export type ToolJsonSchema = {
   additionalProperties?: boolean;
 };
 
+export type ToolRuntimeContext = {
+  ollamaHost?: string;
+  activeModel?: string | null;
+  generationOptions?: unknown;
+  thinkingMode?: unknown;
+};
+
 export type ToolExecutionContext = {
   sessionId: string;
   cwd: string;
   signal: AbortSignal;
+  runtime?: ToolRuntimeContext;
 };
 
 export type ToolExecutionProfile = {

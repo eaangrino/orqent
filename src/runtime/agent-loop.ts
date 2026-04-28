@@ -5,6 +5,7 @@ import {
   type ToolConfirmationHandler,
   type ToolExecutionResult,
   type ToolRegistry,
+  type ToolRuntimeContext,
 } from "../tools/index.js";
 import {
   parseModelToolCall,
@@ -20,6 +21,7 @@ export type ExecuteModelToolCallInput = {
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  runtime?: ToolRuntimeContext;
   permissionPolicy?: PermissionPolicy;
   confirmToolExecution?: ToolConfirmationHandler;
   toolActionLogger?: ToolActionLogger;
@@ -48,6 +50,7 @@ export async function executeModelToolCall({
   cwd,
   timeoutMs,
   signal,
+  runtime,
   permissionPolicy,
   confirmToolExecution,
   toolActionLogger,
@@ -77,6 +80,7 @@ export async function executeModelToolCall({
     cwd,
     timeoutMs,
     signal,
+    runtime,
     permissionPolicy,
     confirmToolExecution,
     toolActionLogger,
