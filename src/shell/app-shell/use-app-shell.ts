@@ -2,6 +2,10 @@ import { realpathSync } from "node:fs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadOllamaConfig, saveOllamaConfig } from "../../models/ollama/storage.js";
 import {
+  loadAppShellConfig,
+  saveAppShellConfig,
+} from "./storage.js";
+import {
   DEFAULT_OLLAMA_CONFIG,
   normalizeOllamaHost,
 } from "../../models/ollama/config.js";
@@ -59,6 +63,8 @@ function formatPermissionModeLabel(mode: PermissionMode) {
 
 export function useAppShell() {
   const [ activeView, setActiveView ] = useState<AppView>("home");
+  const [ isAppShellConfigHydrated, setIsAppShellConfigHydrated ] =
+    useState(false);
   const [ selectedModel, setSelectedModel ] = useState(
     DEFAULT_OLLAMA_CONFIG.selectedModel ?? "gemma4:e4b",
   );
@@ -72,6 +78,37 @@ export function useAppShell() {
   const [ permissionMode, setPermissionMode ] =
     useState<PermissionMode>("ask");
   const [ isOllamaConfigHydrated, setIsOllamaConfigHydrated ] = useState(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function hydrateAppShellConfig() {
+      const config = await loadAppShellConfig();
+
+      if (isCancelled) {
+        return;
+      }
+
+      setActiveView(config.lastActiveView);
+      setIsAppShellConfigHydrated(true);
+    }
+
+    void hydrateAppShellConfig();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAppShellConfigHydrated) {
+      return;
+    }
+
+    void saveAppShellConfig({
+      lastActiveView: activeView,
+    });
+  }, [ isAppShellConfigHydrated, activeView ]);
 
   useEffect(() => {
     let isCancelled = false;
