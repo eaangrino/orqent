@@ -33,6 +33,7 @@ type HomeScreenProps = {
     history: OllamaChatMessage[],
     onToken: (token: string) => void,
     onStatus: (status: string) => void,
+    onReplaceContent: (content: string) => void,
   ) => Promise<string>;
   promptStatus: string | null;
 };
@@ -231,6 +232,19 @@ export function HomeScreen({
       );
     };
 
+    const replaceAssistantContent = (content: string) => {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                content,
+              }
+            : message,
+        ),
+      );
+    };
+
     setState((current) => ({
       ...current,
       prompt: "",
@@ -258,6 +272,7 @@ export function HomeScreen({
         );
       },
       updateAssistantStatus,
+      replaceAssistantContent,
     )
       .then((response) => {
         setMessages((current) =>
@@ -326,7 +341,7 @@ export function HomeScreen({
                 backgroundColor={isUser ? "#4a4a4a" : "#2f2f2f"}>
                 <Box justifyContent="space-between">
                   <Text color={isUser ? "cyan" : "green"} bold>
-                    {isUser ? "Tú" : "Orqent"}
+                    {isUser ? "User" : "Orqent"}
                   </Text>
 
                   {!isUser && message.status ? (
