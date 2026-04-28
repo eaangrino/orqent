@@ -11,7 +11,14 @@ const execFileAsync = promisify(execFile);
 let tempDir = "";
 
 function runSourceCli(args: string[], env?: NodeJS.ProcessEnv) {
-  return execFileAsync("npx", ["tsx", "src/index.tsx", ...args], {
+  const tsxBin = join(
+    process.cwd(),
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "tsx.cmd" : "tsx",
+  );
+
+  return execFileAsync(tsxBin, [ "src/index.tsx", ...args ], {
     env,
   });
 }
@@ -32,7 +39,7 @@ describe("CLI", () => {
       ORQENT_DATA_DIR: tempDir,
     };
 
-    const { stdout, stderr } = await runSourceCli(["--reset"], env);
+    const { stdout, stderr } = await runSourceCli([ "--reset" ], env);
 
     const configFile = join(tempDir, "ollama-config.json");
     const raw = await readFile(configFile, "utf8");
@@ -44,7 +51,7 @@ describe("CLI", () => {
   });
 
   it("orqent --help muestra la ayuda", async () => {
-    const { stdout, stderr } = await runSourceCli(["--help"]);
+    const { stdout, stderr } = await runSourceCli([ "--help" ]);
 
     expect(stderr).toBe("");
     expect(stdout).toContain("Usage");
@@ -59,7 +66,7 @@ describe("CLI", () => {
     );
     const packageJson = JSON.parse(packageJsonRaw) as { version: string };
 
-    const { stdout, stderr } = await runSourceCli(["--version"]);
+    const { stdout, stderr } = await runSourceCli([ "--version" ]);
 
     expect(stderr).toBe("");
     expect(stdout.trim()).toBe(packageJson.version);
