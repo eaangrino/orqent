@@ -1,20 +1,28 @@
 import {
+  createAgentBackgroundTaskState,
   createAgentInstance,
+  getAgentBackgroundTasksIndexFilePath,
   getAgentDefinitionsFilePath,
   getAgentInstancesIndexFilePath,
   getAgentTaskStatesIndexFilePath,
+  getAgentTranscriptFilePath,
+  listAgentBackgroundTasks,
   listAgentDefinitions,
+  listAgentTaskStates,
   readAgentDefinition,
+  readAgentTranscriptEntries,
+  upsertAgentBackgroundTask,
   upsertAgentDefinition,
   upsertAgentInstance,
   upsertAgentTaskState,
-  listAgentTaskStates,
+  type AgentBackgroundTaskState,
   type AgentDefinition,
   type AgentDefinitionInput,
   type AgentDefinitionScope,
   type AgentInstance,
   type AgentMemoryScope,
   type AgentTaskState,
+  type AgentTranscriptEntry,
 } from "../../agents/index.js";
 import type { PermissionMode } from "../../security/index.js";
 import type { ToolDefinition, ToolValidationResult } from "../types.js";
@@ -56,7 +64,8 @@ type AgentSpawnInput = {
   agentIdentifier: string;
   taskInput: string;
   modelOverride?: string | null;
-  executeNow?: boolean;
+  executeNow: boolean;
+  runInBackground: boolean;
 };
 
 type AgentInstanceSummary = Omit<AgentInstance, "systemPrompt" | "metadata">;
@@ -64,11 +73,18 @@ type AgentInstanceSummary = Omit<AgentInstance, "systemPrompt" | "metadata">;
 export type AgentSpawnResult = {
   instance: AgentInstanceSummary;
   taskState: AgentTaskState;
+  backgroundTask: AgentBackgroundTaskState | null;
   instanceFilePath: string;
   taskStateFilePath: string;
+  backgroundTaskFilePath: string;
   execution:
   | {
     status: "stubbed";
+    message: string;
+  }
+  | {
+    status: "background_queued";
+    backgroundTaskId: string;
     message: string;
   }
   | {
@@ -90,6 +106,29 @@ type AgentListTasksInput = {
 
 export type AgentListTasksResult = {
   tasks: AgentTaskState[];
+  count: number;
+  filePath: string;
+};
+
+type AgentReadTranscriptInput = {
+  instanceId: string;
+};
+
+export type AgentReadTranscriptResult = {
+  instanceId: string;
+  entries: AgentTranscriptEntry[];
+  count: number;
+  filePath: string;
+};
+
+type AgentListBackgroundTasksInput = {
+  parentSessionId?: string;
+  agentIdentifier?: string;
+  status?: AgentBackgroundTaskState[ "status" ];
+};
+
+export type AgentListBackgroundTasksResult = {
+  backgroundTasks: AgentBackgroundTaskState[];
   count: number;
   filePath: string;
 };
@@ -386,17 +425,6 @@ function validateAgentSpawnInput(
     return taskInput;
   }
 
-  const normalizedInput: AgentSpawnInput = {
-    agentIdentifier: agentIdentifier.input.toLowerCase(),
-    taskInput: taskInput.input,
-  };
-
-  const modelOverride = normalizeOptionalString(input.modelOverride);
-
-  if (modelOverride !== undefined) {
-    normalizedInput.modelOverride = modelOverride;
-  }
-
   if (typeof input.executeNow !== "boolean") {
     return {
       ok: false,
@@ -404,7 +432,32 @@ function validateAgentSpawnInput(
     };
   }
 
-  normalizedInput.executeNow = input.executeNow;
+  if (typeof input.runInBackground !== "boolean") {
+    return {
+      ok: false,
+      error: "runInBackground must be a boolean.",
+    };
+  }
+
+  if (input.executeNow && input.runInBackground) {
+    return {
+      ok: false,
+      error: "executeNow and runInBackground cannot both be true.",
+    };
+  }
+
+  const normalizedInput: AgentSpawnInput = {
+    agentIdentifier: agentIdentifier.input.toLowerCase(),
+    taskInput: taskInput.input,
+    executeNow: input.executeNow,
+    runInBackground: input.runInBackground,
+  };
+
+  const modelOverride = normalizeOptionalString(input.modelOverride);
+
+  if (modelOverride !== undefined) {
+    normalizedInput.modelOverride = modelOverride;
+  }
 
   return {
     ok: true,
@@ -440,6 +493,107 @@ function validateAgentListTasksInput(
   }
 
   const normalizedInput: AgentListTasksInput = {};
+
+  if (input.parentSessionId !== undefined) {
+    if (typeof input.parentSessionId !== "string") {
+      return {
+        ok: false,
+        error: "parentSessionId must be a string when provided.",
+      };
+    }
+
+    const parentSessionId = input.parentSessionId.trim();
+
+    if (!parentSessionId) {
+      return {
+        ok: false,
+        error: "parentSessionId must not be empty when provided.",
+      };
+    }
+
+    normalizedInput.parentSessionId = parentSessionId;
+  }
+
+  if (input.agentIdentifier !== undefined) {
+    if (typeof input.agentIdentifier !== "string") {
+      return {
+        ok: false,
+        error: "agentIdentifier must be a string when provided.",
+      };
+    }
+
+    const agentIdentifier = input.agentIdentifier.trim().toLowerCase();
+
+    if (!agentIdentifier) {
+      return {
+        ok: false,
+        error: "agentIdentifier must not be empty when provided.",
+      };
+    }
+
+    normalizedInput.agentIdentifier = agentIdentifier;
+  }
+
+  if (input.status !== undefined) {
+    if (
+      input.status !== "queued" &&
+      input.status !== "running" &&
+      input.status !== "completed" &&
+      input.status !== "failed" &&
+      input.status !== "cancelled"
+    ) {
+      return {
+        ok: false,
+        error:
+          'status must be one of "queued", "running", "completed", "failed", "cancelled".',
+      };
+    }
+
+    normalizedInput.status = input.status;
+  }
+
+  return {
+    ok: true,
+    input: normalizedInput,
+  };
+}
+
+function validateAgentReadTranscriptInput(
+  input: unknown,
+): ToolValidationResult<AgentReadTranscriptInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "input must be an object.",
+    };
+  }
+
+  if (typeof input.instanceId !== "string" || !input.instanceId.trim()) {
+    return {
+      ok: false,
+      error: "instanceId must be a non-empty string.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      instanceId: input.instanceId.trim(),
+    },
+  };
+}
+
+function validateAgentListBackgroundTasksInput(
+  input: unknown,
+): ToolValidationResult<AgentListBackgroundTasksInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "input must be an object.",
+    };
+  }
+
+  const normalizedInput: AgentListBackgroundTasksInput = {};
 
   if (input.parentSessionId !== undefined) {
     if (typeof input.parentSessionId !== "string") {
@@ -649,6 +803,11 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
   inputSchema: {
     type: "object",
     properties: {
+      runInBackground: {
+        type: "boolean",
+        description:
+          "When true, create a persistent background task in queued status. It does not execute immediately yet.",
+      },
       agentIdentifier: {
         type: "string",
         description:
@@ -665,7 +824,7 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
           "Optional model override for this spawned agent instance. Null means use the agent definition model or inherit later.",
       },
     },
-    required: [ "agentIdentifier", "taskInput", "executeNow" ],
+    required: [ "agentIdentifier", "taskInput", "executeNow", "runInBackground" ],
     additionalProperties: false,
   },
   risk: "medium",
@@ -682,6 +841,53 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
         error: {
           code: "agent_definition_not_found",
           message: `Agent definition "${input.agentIdentifier}" was not found.`,
+        },
+      };
+    }
+
+    if (input.runInBackground) {
+      const { instance, taskState } = createAgentInstance({
+        definition,
+        parentSessionId: context.sessionId,
+        cwd: context.cwd,
+        taskInput: input.taskInput,
+        modelOverride: input.modelOverride,
+        metadata: {
+          createdByTool: "agent.spawn",
+          runInBackground: true,
+        },
+      });
+
+      const persistedInstance = await upsertAgentInstance(instance);
+      const persistedTaskState = await upsertAgentTaskState(taskState);
+
+      const backgroundTask = createAgentBackgroundTaskState({
+        instance: persistedInstance,
+        taskState: persistedTaskState,
+        metadata: {
+          createdByTool: "agent.spawn",
+          runInBackground: true,
+        },
+      });
+
+      const persistedBackgroundTask =
+        await upsertAgentBackgroundTask(backgroundTask);
+
+      return {
+        ok: true,
+        result: {
+          instance: toAgentInstanceSummary(persistedInstance),
+          taskState: persistedTaskState,
+          backgroundTask: persistedBackgroundTask,
+          instanceFilePath: getAgentInstancesIndexFilePath(),
+          taskStateFilePath: getAgentTaskStatesIndexFilePath(),
+          backgroundTaskFilePath: getAgentBackgroundTasksIndexFilePath(),
+          execution: {
+            status: "background_queued",
+            backgroundTaskId: persistedBackgroundTask.backgroundTaskId,
+            message:
+              "Agent instance, task state, and background task were persisted. Background execution is not implemented yet.",
+          },
         },
       };
     }
@@ -706,8 +912,10 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
         result: {
           instance: toAgentInstanceSummary(persistedInstance),
           taskState: persistedTaskState,
+          backgroundTask: null,
           instanceFilePath: getAgentInstancesIndexFilePath(),
           taskStateFilePath: getAgentTaskStatesIndexFilePath(),
+          backgroundTaskFilePath: getAgentBackgroundTasksIndexFilePath(),
           execution: {
             status: "stubbed",
             message:
@@ -756,6 +964,7 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
       metadata: {
         createdByTool: "agent.spawn",
         executeNow: true,
+        runInBackground: false,
       },
     });
 
@@ -764,8 +973,10 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
       result: {
         instance: toAgentInstanceSummary(executionResult.instance),
         taskState: executionResult.taskState,
+        backgroundTask: null,
         instanceFilePath: getAgentInstancesIndexFilePath(),
         taskStateFilePath: getAgentTaskStatesIndexFilePath(),
+        backgroundTaskFilePath: getAgentBackgroundTasksIndexFilePath(),
         execution: executionResult.ok
           ? {
             status: "completed",
@@ -843,6 +1054,112 @@ export const agentListTasksTool: ToolDefinition<
         tasks: filteredTasks,
         count: filteredTasks.length,
         filePath: getAgentTaskStatesIndexFilePath(),
+      },
+    };
+  },
+};
+
+export const agentReadTranscriptTool: ToolDefinition<
+  AgentReadTranscriptInput,
+  AgentReadTranscriptResult
+> = {
+  name: "agent.read_transcript",
+  description:
+    "Read the isolated transcript for a persistent subagent instance. This is read-only and returns the subagent system/user/assistant messages recorded for that instance.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      instanceId: {
+        type: "string",
+        description:
+          "Subagent instance id whose isolated transcript should be read.",
+      },
+    },
+    required: [ "instanceId" ],
+    additionalProperties: false,
+  },
+  risk: "low",
+  permissions: [ "agents:read" ],
+  requiresConfirmation: false,
+  isReadOnly: true,
+  validateInput: validateAgentReadTranscriptInput,
+  async execute(input) {
+    const entries = await readAgentTranscriptEntries(input.instanceId);
+
+    return {
+      ok: true,
+      result: {
+        instanceId: input.instanceId,
+        entries,
+        count: entries.length,
+        filePath: getAgentTranscriptFilePath(input.instanceId),
+      },
+    };
+  },
+};
+
+export const agentListBackgroundTasksTool: ToolDefinition<
+  AgentListBackgroundTasksInput,
+  AgentListBackgroundTasksResult
+> = {
+  name: "agent.list_background_tasks",
+  description:
+    "List persistent background subagent task states. Optionally filter by parentSessionId, agentIdentifier, or status.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      parentSessionId: {
+        type: "string",
+        description: "Optional parent chat session id to filter background tasks.",
+      },
+      agentIdentifier: {
+        type: "string",
+        description: "Optional agent identifier to filter background tasks.",
+      },
+      status: {
+        type: "string",
+        enum: [ "queued", "running", "completed", "failed", "cancelled" ],
+        description: "Optional background task status filter.",
+      },
+    },
+    additionalProperties: false,
+  },
+  risk: "low",
+  permissions: [ "agents:read" ],
+  requiresConfirmation: false,
+  isReadOnly: true,
+  validateInput: validateAgentListBackgroundTasksInput,
+  async execute(input) {
+    const backgroundTasks = await listAgentBackgroundTasks();
+
+    const filteredTasks = backgroundTasks.filter((task) => {
+      if (
+        input.parentSessionId !== undefined &&
+        task.parentSessionId !== input.parentSessionId
+      ) {
+        return false;
+      }
+
+      if (
+        input.agentIdentifier !== undefined &&
+        task.agentIdentifier !== input.agentIdentifier
+      ) {
+        return false;
+      }
+
+      if (input.status !== undefined && task.status !== input.status) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return {
+      ok: true,
+      result: {
+        backgroundTasks: filteredTasks,
+        count: filteredTasks.length,
+        filePath: getAgentBackgroundTasksIndexFilePath(),
       },
     };
   },

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   readAgentInstance,
   readAgentTaskState,
+  readAgentTranscriptEntries,
   type AgentDefinition,
 } from "../../agents/index.js";
 import {
@@ -122,6 +123,21 @@ describe("subagent-runner", () => {
       status: "completed",
       result: "Implementation plan ready.",
     });
+
+    const transcript = await readAgentTranscriptEntries(result.instance.instanceId);
+
+    expect(transcript.map((entry) => entry.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+    ]);
+
+    expect(transcript[ 0 ]?.content).toContain("isolated Orqent subagent");
+    expect(transcript[ 1 ]?.content).toBe("Plan the next implementation step.");
+    expect(transcript[ 2 ]?.content).toBe("Implementation plan ready.");
+    expect(transcript[ 2 ]?.metadata).toEqual({
+      type: "subagent_response",
+    });
   });
 
   it("modelOverride gana sobre modelo de definición y fallback", async () => {
@@ -204,6 +220,21 @@ describe("subagent-runner", () => {
       "No model available for subagent execution.",
     );
     expect(chatRunner).not.toHaveBeenCalled();
+    const transcript = await readAgentTranscriptEntries(result.instance.instanceId);
+
+    expect(transcript.map((entry) => entry.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+    ]);
+
+    expect(transcript[ 2 ]?.content).toBe(
+      "Error: No model available for subagent execution.",
+    );
+    expect(transcript[ 2 ]?.metadata).toEqual({
+      type: "subagent_error",
+      error: true,
+    });
   });
 
   it("marca failed cuando el chatRunner falla", async () => {
@@ -238,6 +269,20 @@ describe("subagent-runner", () => {
     await expect(readAgentTaskState(result.taskState.taskId)).resolves.toMatchObject({
       status: "failed",
       error: "Ollama failed.",
+    });
+
+    const transcript = await readAgentTranscriptEntries(result.instance.instanceId);
+
+    expect(transcript.map((entry) => entry.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+    ]);
+
+    expect(transcript[ 2 ]?.content).toBe("Error: Ollama failed.");
+    expect(transcript[ 2 ]?.metadata).toEqual({
+      type: "subagent_error",
+      error: true,
     });
   });
 });

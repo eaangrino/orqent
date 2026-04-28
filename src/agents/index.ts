@@ -4,3 +4,5 @@ export * from "./registry.js";
 export * from "./prompt.js";
 export * from "./instance.js";
 export * from "./state-storage.js";
+export * from "./transcript-storage.js";
+export * from "./background-task-storage.js";

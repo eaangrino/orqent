@@ -1,4 +1,5 @@
 import {
+  appendAgentTranscriptEntry,
   createAgentInstance,
   markAgentInstanceCompleted,
   markAgentInstanceFailed,
@@ -164,6 +165,26 @@ export async function runSubagentTask({
   await upsertAgentTaskState(taskState);
 
   try {
+    const subagentSystemPrompt = buildSubagentSystemPrompt(instance);
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "system",
+      content: subagentSystemPrompt,
+      model: effectiveModel,
+      metadata: {
+        type: "subagent_system_prompt",
+      },
+    });
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "user",
+      content: taskState.input,
+      model: effectiveModel,
+      metadata: {
+        type: "subagent_task_input",
+      },
+    });
+
     if (!effectiveModel) {
       throw new Error("No model available for subagent execution.");
     }
@@ -176,7 +197,7 @@ export async function runSubagentTask({
       messages: [
         {
           role: "system",
-          content: buildSubagentSystemPrompt(instance),
+          content: subagentSystemPrompt,
         },
         {
           role: "user",
@@ -192,6 +213,15 @@ export async function runSubagentTask({
 
     await upsertAgentInstance(instance);
     await upsertAgentTaskState(taskState);
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "assistant",
+      content: response,
+      model: result.model,
+      metadata: {
+        type: "subagent_response",
+      },
+    });
 
     return {
       ok: true,
@@ -211,6 +241,16 @@ export async function runSubagentTask({
 
     await upsertAgentInstance(instance);
     await upsertAgentTaskState(taskState);
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "assistant",
+      content: `Error: ${message}`,
+      model: effectiveModel,
+      metadata: {
+        type: "subagent_error",
+        error: true,
+      },
+    });
 
     return {
       ok: false,

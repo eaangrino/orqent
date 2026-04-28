@@ -8,8 +8,10 @@ import { shellExecuteTool } from "./builtin/shell.js";
 import type { AnyToolDefinition } from "./types.js";
 import {
   agentCreateDefinitionTool,
+  agentListBackgroundTasksTool,
   agentListDefinitionsTool,
   agentListTasksTool,
+  agentReadTranscriptTool,
   agentSpawnTool,
 } from "./builtin/agents.js";
 
@@ -80,6 +82,8 @@ export const builtinTools: AnyToolDefinition[] = [
   agentListDefinitionsTool,
   agentSpawnTool,
   agentListTasksTool,
+  agentReadTranscriptTool,
+  agentListBackgroundTasksTool,
 ];
 
 export const defaultToolRegistry = createToolRegistry(builtinTools);

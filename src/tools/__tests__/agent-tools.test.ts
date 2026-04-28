@@ -2,15 +2,23 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readAgentDefinition } from "../../agents/index.js";
+import {
+  readAgentDefinition,
+  appendAgentTranscriptEntry,
+  readAgentInstance,
+} from "../../agents/index.js";
 import { createDefaultPermissionPolicy } from "../../security/index.js";
 import {
   agentCreateDefinitionTool,
   agentListDefinitionsTool,
   agentListTasksTool,
+  agentReadTranscriptTool,
   agentSpawnTool,
+  agentListBackgroundTasksTool,
+  type AgentListBackgroundTasksResult,
   type AgentListDefinitionsResult,
   type AgentListTasksResult,
+  type AgentReadTranscriptResult,
   type AgentSpawnResult,
 } from "../builtin/agents.js";
 import { createToolRegistry } from "../registry.js";
@@ -355,6 +363,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "planner",
         taskInput: "Plan the next implementation step.",
         executeNow: false,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -425,6 +434,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
         executeNow: false,
+        runInBackground: false,
       },
     });
 
@@ -447,6 +457,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "missing-agent",
         taskInput: "Plan work.",
         executeNow: false,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -475,6 +486,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "planner",
         taskInput: "   ",
         executeNow: false,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -519,6 +531,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
         executeNow: true,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -598,6 +611,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
         executeNow: true,
+        runInBackground: false,
       },
       runtime: {
         ollamaHost: "http://localhost:11434",
@@ -631,6 +645,7 @@ describe("agent.spawn", () => {
       metadata: {
         createdByTool: "agent.spawn",
         executeNow: true,
+        runInBackground: false,
       },
     });
 
@@ -728,6 +743,7 @@ describe("agent.spawn", () => {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
         executeNow: true,
+        runInBackground: false,
       },
       runtime: {
         ollamaHost: "http://localhost:11434",
@@ -774,6 +790,32 @@ describe("agent.spawn", () => {
     expect(result.error.code).toBe("invalid_tool_input");
     expect(result.error.message).toBe("executeNow must be a boolean.");
   });
+
+  it("rechaza spawn sin runInBackground explícito", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentSpawnTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.spawn",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        agentIdentifier: "planner",
+        taskInput: "Plan work.",
+        executeNow: false,
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe("runInBackground must be a boolean.");
+  });
 });
 
 describe("agent.list_tasks", () => {
@@ -812,6 +854,7 @@ describe("agent.list_tasks", () => {
         agentIdentifier: "planner",
         taskInput: "Plan the next implementation step.",
         executeNow: false,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -886,6 +929,7 @@ describe("agent.list_tasks", () => {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
         executeNow: false,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -901,6 +945,7 @@ describe("agent.list_tasks", () => {
         agentIdentifier: "tester",
         taskInput: "Write tests.",
         executeNow: false,
+        runInBackground: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -936,6 +981,337 @@ describe("agent.list_tasks", () => {
     const result = await executeTool({
       registry,
       toolName: "agent.list_tasks",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        status: "unknown",
+      },
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      'status must be one of "queued", "running", "completed", "failed", "cancelled".',
+    );
+  });
+});
+
+describe("agent.read_transcript", () => {
+  it("lee transcript aislado de una instancia de subagente", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([
+      agentCreateDefinitionTool,
+      agentSpawnTool,
+      agentReadTranscriptTool,
+    ]);
+
+    await executeTool({
+      registry,
+      toolName: "agent.create_definition",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        identifier: "planner",
+        name: "Planner",
+        whenToUse: "Use for planning.",
+        systemPrompt: "Plan technical work.",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    const spawnResult = await executeTool({
+      registry,
+      toolName: "agent.spawn",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        agentIdentifier: "planner",
+        taskInput: "Plan work.",
+        executeNow: false,
+        runInBackground: false,
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectOkResult<AgentSpawnResult>(spawnResult);
+
+    const instance = await readAgentInstance(
+      spawnResult.result.instance.instanceId,
+    );
+
+    expect(instance).not.toBeNull();
+
+    if (!instance) {
+      throw new Error("Expected persisted agent instance.");
+    }
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "system",
+      content: "System prompt.",
+      model: "gemma4:e4b",
+    });
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "user",
+      content: "Plan work.",
+      model: "gemma4:e4b",
+    });
+
+    await appendAgentTranscriptEntry(instance, {
+      role: "assistant",
+      content: "Done.",
+      model: "gemma4:e4b",
+    });
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.read_transcript",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        instanceId: instance.instanceId,
+      },
+    });
+
+    expectOkResult<AgentReadTranscriptResult>(result);
+
+    expect(result.result.instanceId).toBe(instance.instanceId);
+    expect(result.result.count).toBe(3);
+    expect(result.result.filePath).toContain("agents/transcripts/");
+    expect(result.result.entries.map((entry) => entry.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+    ]);
+    expect(result.result.entries[ 2 ]?.content).toBe("Done.");
+  });
+
+  it("devuelve transcript vacío cuando la instancia no tiene transcript", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentReadTranscriptTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.read_transcript",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        instanceId: "agent_instance_missing",
+      },
+    });
+
+    expectOkResult<AgentReadTranscriptResult>(result);
+
+    expect(result.result).toMatchObject({
+      instanceId: "agent_instance_missing",
+      entries: [],
+      count: 0,
+    });
+  });
+
+  it("rechaza instanceId vacío", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentReadTranscriptTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.read_transcript",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        instanceId: "   ",
+      },
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "instanceId must be a non-empty string.",
+    );
+  });
+});
+
+describe("agent.list_background_tasks", () => {
+  it("lista background tasks creadas por agent.spawn", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([
+      agentCreateDefinitionTool,
+      agentSpawnTool,
+      agentListBackgroundTasksTool,
+    ]);
+
+    await executeTool({
+      registry,
+      toolName: "agent.create_definition",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        identifier: "planner",
+        name: "Planner",
+        whenToUse: "Use for planning.",
+        systemPrompt: "Plan technical work.",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    const spawnResult = await executeTool({
+      registry,
+      toolName: "agent.spawn",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        agentIdentifier: "planner",
+        taskInput: "Plan work in background.",
+        executeNow: false,
+        runInBackground: true,
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectOkResult<AgentSpawnResult>(spawnResult);
+
+    expect(spawnResult.result.execution.status).toBe("background_queued");
+    expect(spawnResult.result.backgroundTask?.status).toBe("queued");
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.list_background_tasks",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {},
+    });
+
+    expectOkResult<AgentListBackgroundTasksResult>(result);
+
+    expect(result.result.count).toBe(1);
+    expect(result.result.backgroundTasks[ 0 ]).toMatchObject({
+      parentSessionId: "session-parent",
+      agentIdentifier: "planner",
+      status: "queued",
+      input: "Plan work in background.",
+    });
+    expect(result.result.filePath).toContain("agents/background-tasks.json");
+  });
+
+  it("filtra background tasks por parentSessionId, agentIdentifier y status", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([
+      agentCreateDefinitionTool,
+      agentSpawnTool,
+      agentListBackgroundTasksTool,
+    ]);
+
+    await executeTool({
+      registry,
+      toolName: "agent.create_definition",
+      sessionId: "session-a",
+      cwd: tempDir,
+      input: {
+        identifier: "planner",
+        name: "Planner",
+        whenToUse: "Use for planning.",
+        systemPrompt: "Plan technical work.",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    await executeTool({
+      registry,
+      toolName: "agent.create_definition",
+      sessionId: "session-a",
+      cwd: tempDir,
+      input: {
+        identifier: "tester",
+        name: "Tester",
+        whenToUse: "Use for tests.",
+        systemPrompt: "Write tests.",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    await executeTool({
+      registry,
+      toolName: "agent.spawn",
+      sessionId: "session-a",
+      cwd: tempDir,
+      input: {
+        agentIdentifier: "planner",
+        taskInput: "Plan work.",
+        executeNow: false,
+        runInBackground: true,
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    await executeTool({
+      registry,
+      toolName: "agent.spawn",
+      sessionId: "session-b",
+      cwd: tempDir,
+      input: {
+        agentIdentifier: "tester",
+        taskInput: "Write tests.",
+        executeNow: false,
+        runInBackground: true,
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.list_background_tasks",
+      sessionId: "session-a",
+      cwd: tempDir,
+      input: {
+        parentSessionId: "session-a",
+        agentIdentifier: "planner",
+        status: "queued",
+      },
+    });
+
+    expectOkResult<AgentListBackgroundTasksResult>(result);
+
+    expect(result.result.count).toBe(1);
+    expect(result.result.backgroundTasks[ 0 ]?.parentSessionId).toBe("session-a");
+    expect(result.result.backgroundTasks[ 0 ]?.agentIdentifier).toBe("planner");
+    expect(result.result.backgroundTasks[ 0 ]?.status).toBe("queued");
+  });
+
+  it("rechaza status inválido", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentListBackgroundTasksTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.list_background_tasks",
       sessionId: "session-parent",
       cwd: tempDir,
       input: {

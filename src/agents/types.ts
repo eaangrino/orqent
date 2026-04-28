@@ -96,3 +96,47 @@ export type CreateAgentInstanceResult = {
   instance: AgentInstance;
   taskState: AgentTaskState;
 };
+
+export type AgentTranscriptRole = "system" | "user" | "assistant";
+
+export type AgentTranscriptEntryInput = {
+  role: AgentTranscriptRole;
+  content: string;
+  model?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type AgentTranscriptEntry = AgentTranscriptEntryInput & {
+  id: string;
+  instanceId: string;
+  taskId: string;
+  parentSessionId: string;
+  agentIdentifier: string;
+  createdAt: string;
+};
+
+export type AgentBackgroundTaskStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AgentBackgroundTaskState = {
+  backgroundTaskId: string;
+  taskId: string;
+  agentInstanceId: string;
+  parentSessionId: string;
+  agentIdentifier: string;
+  cwd: string;
+  status: AgentBackgroundTaskStatus;
+  input: string;
+  result: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  lastHeartbeatAt: string | null;
+  metadata?: Record<string, unknown>;
+};
