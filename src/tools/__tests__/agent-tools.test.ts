@@ -354,6 +354,7 @@ describe("agent.spawn", () => {
       input: {
         agentIdentifier: "planner",
         taskInput: "Plan the next implementation step.",
+        executeNow: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -423,6 +424,7 @@ describe("agent.spawn", () => {
       input: {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
+        executeNow: false,
       },
     });
 
@@ -444,6 +446,7 @@ describe("agent.spawn", () => {
       input: {
         agentIdentifier: "missing-agent",
         taskInput: "Plan work.",
+        executeNow: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -471,6 +474,7 @@ describe("agent.spawn", () => {
       input: {
         agentIdentifier: "planner",
         taskInput: "   ",
+        executeNow: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -745,6 +749,31 @@ describe("agent.spawn", () => {
     expect(result.result.taskState.status).toBe("failed");
     expect(result.result.taskState.error).toBe("Ollama failed.");
   });
+
+  it("rechaza spawn sin executeNow explícito", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentSpawnTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.spawn",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        agentIdentifier: "planner",
+        taskInput: "Plan work.",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe("executeNow must be a boolean.");
+  });
 });
 
 describe("agent.list_tasks", () => {
@@ -781,7 +810,8 @@ describe("agent.list_tasks", () => {
       cwd: tempDir,
       input: {
         agentIdentifier: "planner",
-        taskInput: "Plan work.",
+        taskInput: "Plan the next implementation step.",
+        executeNow: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -855,6 +885,7 @@ describe("agent.list_tasks", () => {
       input: {
         agentIdentifier: "planner",
         taskInput: "Plan work.",
+        executeNow: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,
@@ -869,6 +900,7 @@ describe("agent.list_tasks", () => {
       input: {
         agentIdentifier: "tester",
         taskInput: "Write tests.",
+        executeNow: false,
       },
       confirmToolExecution: async () => ({
         allowed: true,

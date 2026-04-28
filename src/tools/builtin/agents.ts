@@ -397,16 +397,14 @@ function validateAgentSpawnInput(
     normalizedInput.modelOverride = modelOverride;
   }
 
-  if (input.executeNow !== undefined) {
-    if (typeof input.executeNow !== "boolean") {
-      return {
-        ok: false,
-        error: "executeNow must be a boolean when provided.",
-      };
-    }
-
-    normalizedInput.executeNow = input.executeNow;
+  if (typeof input.executeNow !== "boolean") {
+    return {
+      ok: false,
+      error: "executeNow must be a boolean.",
+    };
   }
+
+  normalizedInput.executeNow = input.executeNow;
 
   return {
     ok: true,
@@ -667,7 +665,7 @@ export const agentSpawnTool: ToolDefinition<AgentSpawnInput, AgentSpawnResult> =
           "Optional model override for this spawned agent instance. Null means use the agent definition model or inherit later.",
       },
     },
-    required: [ "agentIdentifier", "taskInput" ],
+    required: [ "agentIdentifier", "taskInput", "executeNow" ],
     additionalProperties: false,
   },
   risk: "medium",
