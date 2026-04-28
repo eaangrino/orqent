@@ -33,12 +33,13 @@ describe("app shell storage", () => {
     );
   });
 
-  it("saveAppShellConfig persiste la última vista activa", async () => {
+  it("saveAppShellConfig persiste configuración general del shell", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-app-shell-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;
 
     await saveAppShellConfig({
       lastActiveView: "model",
+      permissionMode: "allow",
     });
 
     const raw = await readFile(getAppShellConfigFilePath(), "utf8");
@@ -46,10 +47,28 @@ describe("app shell storage", () => {
 
     expect(parsed).toEqual({
       lastActiveView: "model",
+      permissionMode: "allow",
     });
   });
 
-  it("loadAppShellConfig normaliza vistas inválidas", async () => {
+  it("saveAppShellConfig conserva defaults cuando recibe configuración parcial", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-app-shell-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await saveAppShellConfig({
+      lastActiveView: "permissions",
+    });
+
+    const raw = await readFile(getAppShellConfigFilePath(), "utf8");
+    const parsed = JSON.parse(raw);
+
+    expect(parsed).toEqual({
+      lastActiveView: "permissions",
+      permissionMode: "ask",
+    });
+  });
+
+  it("loadAppShellConfig normaliza valores inválidos", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-app-shell-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;
 
@@ -57,12 +76,14 @@ describe("app shell storage", () => {
       getAppShellConfigFilePath(),
       JSON.stringify({
         lastActiveView: "invalid-view",
+        permissionMode: "invalid-mode",
       }),
       "utf8",
     );
 
     await expect(loadAppShellConfig()).resolves.toEqual({
       lastActiveView: "home",
+      permissionMode: "ask",
     });
   });
 });

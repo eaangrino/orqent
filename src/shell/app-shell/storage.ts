@@ -1,14 +1,17 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { PermissionMode } from "../../security/index.js";
 import type { AppView } from "./types.js";
 
 export type AppShellConfig = {
   lastActiveView: AppView;
+  permissionMode: PermissionMode;
 };
 
 export const DEFAULT_APP_SHELL_CONFIG: AppShellConfig = {
   lastActiveView: "home",
+  permissionMode: "ask",
 };
 
 function resolveDataDir() {
@@ -40,6 +43,14 @@ function normalizeAppView(value: unknown): AppView {
   return DEFAULT_APP_SHELL_CONFIG.lastActiveView;
 }
 
+function normalizePermissionMode(value: unknown): PermissionMode {
+  if (value === "ask" || value === "allow" || value === "deny") {
+    return value;
+  }
+
+  return DEFAULT_APP_SHELL_CONFIG.permissionMode;
+}
+
 function normalizeAppShellConfig(value: unknown): AppShellConfig {
   if (
     typeof value !== "object" ||
@@ -53,6 +64,7 @@ function normalizeAppShellConfig(value: unknown): AppShellConfig {
 
   return {
     lastActiveView: normalizeAppView(parsed.lastActiveView),
+    permissionMode: normalizePermissionMode(parsed.permissionMode),
   };
 }
 
@@ -68,7 +80,7 @@ export async function loadAppShellConfig(): Promise<AppShellConfig> {
 }
 
 export async function saveAppShellConfig(
-  config: AppShellConfig,
+  config: Partial<AppShellConfig>,
 ): Promise<void> {
   const configFile = resolveAppShellConfigFile();
 
@@ -76,7 +88,14 @@ export async function saveAppShellConfig(
 
   await writeFile(
     configFile,
-    JSON.stringify(normalizeAppShellConfig(config), null, 2),
+    JSON.stringify(
+      normalizeAppShellConfig({
+        ...DEFAULT_APP_SHELL_CONFIG,
+        ...config,
+      }),
+      null,
+      2,
+    ),
     "utf8",
   );
 }

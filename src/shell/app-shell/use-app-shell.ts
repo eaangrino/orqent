@@ -90,6 +90,7 @@ export function useAppShell() {
       }
 
       setActiveView(config.lastActiveView);
+      setPermissionMode(config.permissionMode);
       setIsAppShellConfigHydrated(true);
     }
 
@@ -107,8 +108,9 @@ export function useAppShell() {
 
     void saveAppShellConfig({
       lastActiveView: activeView,
+      permissionMode,
     });
-  }, [ isAppShellConfigHydrated, activeView ]);
+  }, [ isAppShellConfigHydrated, activeView, permissionMode ]);
 
   useEffect(() => {
     let isCancelled = false;
