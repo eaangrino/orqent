@@ -1,11 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import {
-  readAgentDefinition,
   appendAgentTranscriptEntry,
+  createAgentBackgroundTaskState,
+  createAgentInstance,
+  readAgentDefinition,
   readAgentInstance,
+  upsertAgentDefinition,
 } from "../../agents/index.js";
 import { createDefaultPermissionPolicy } from "../../security/index.js";
 import {
@@ -15,6 +18,8 @@ import {
   agentReadTranscriptTool,
   agentSpawnTool,
   agentListBackgroundTasksTool,
+  agentRunBackgroundTaskTool,
+  type AgentRunBackgroundTaskResult,
   type AgentListBackgroundTasksResult,
   type AgentListDefinitionsResult,
   type AgentListTasksResult,
@@ -24,6 +29,7 @@ import {
 import { createToolRegistry } from "../registry.js";
 import { executeTool } from "../router.js";
 import type { ToolExecutionResult } from "../types.js";
+import { runQueuedBackgroundTask } from "../../runtime/background-task-runner.js";
 
 
 const { runSubagentTaskMock } = vi.hoisted(() => ({
@@ -33,6 +39,12 @@ const { runSubagentTaskMock } = vi.hoisted(() => ({
 vi.mock("../../runtime/subagent-runner.js", () => ({
   runSubagentTask: runSubagentTaskMock,
 }));
+
+vi.mock("../../runtime/background-task-runner.js", () => ({
+  runQueuedBackgroundTask: vi.fn(),
+}));
+
+const runQueuedBackgroundTaskMock = vi.mocked(runQueuedBackgroundTask);
 
 let tempDir = "";
 
@@ -47,6 +59,10 @@ afterEach(async () => {
 
   delete process.env.ORQENT_DATA_DIR;
   runSubagentTaskMock.mockReset();
+});
+
+beforeEach(() => {
+  runQueuedBackgroundTaskMock.mockReset();
 });
 
 function expectOkResult<TResult>(
@@ -1323,6 +1339,184 @@ describe("agent.list_background_tasks", () => {
     expect(result.error.code).toBe("invalid_tool_input");
     expect(result.error.message).toBe(
       'status must be one of "queued", "running", "completed", "failed", "cancelled".',
+    );
+  });
+});
+
+describe("agent.run_background_task", () => {
+  it("ejecuta una background task queued usando el runner", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentRunBackgroundTaskTool ]);
+
+    const definition = await upsertAgentDefinition({
+      identifier: "planner",
+      name: "Planner",
+      whenToUse: "Use for planning.",
+      systemPrompt: "Plan technical work.",
+      model: "gemma4:e4b",
+    });
+
+    const { instance, taskState } = createAgentInstance({
+      definition,
+      parentSessionId: "session-parent",
+      cwd: tempDir,
+      taskInput: "Plan background work.",
+    });
+
+    const backgroundTask = createAgentBackgroundTaskState({
+      instance,
+      taskState,
+    });
+
+    runQueuedBackgroundTaskMock.mockResolvedValueOnce({
+      ok: true,
+      backgroundTask: {
+        ...backgroundTask,
+        status: "completed",
+        result: "Background plan ready.",
+        error: null,
+      },
+      instance: {
+        ...instance,
+        status: "completed",
+      },
+      taskState: {
+        ...taskState,
+        status: "completed",
+        result: "Background plan ready.",
+        error: null,
+      },
+      response: "Background plan ready.",
+      model: "gemma4:e4b",
+    });
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.run_background_task",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        backgroundTaskId: backgroundTask.backgroundTaskId,
+      },
+      runtime: {
+        ollamaHost: "http://localhost:11434",
+        activeModel: "gemma4:e4b",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectOkResult<AgentRunBackgroundTaskResult>(result);
+
+    expect(runQueuedBackgroundTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundTaskId: backgroundTask.backgroundTaskId,
+        host: "http://localhost:11434",
+        fallbackModel: "gemma4:e4b",
+      }),
+    );
+
+    expect(result.result.execution).toEqual({
+      status: "completed",
+      response: "Background plan ready.",
+      model: "gemma4:e4b",
+    });
+    expect(result.result.backgroundTask?.status).toBe("completed");
+    expect(result.result.taskState?.status).toBe("completed");
+    expect(result.result.instance?.status).toBe("completed");
+  });
+
+  it("retorna execution failed cuando el runner falla", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentRunBackgroundTaskTool ]);
+
+    runQueuedBackgroundTaskMock.mockResolvedValueOnce({
+      ok: false,
+      backgroundTask: null,
+      instance: null,
+      taskState: null,
+      error: "Background task \"missing\" was not found.",
+    });
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.run_background_task",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        backgroundTaskId: "missing",
+      },
+      runtime: {
+        ollamaHost: "http://localhost:11434",
+        activeModel: "gemma4:e4b",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectOkResult<AgentRunBackgroundTaskResult>(result);
+
+    expect(result.result.execution).toEqual({
+      status: "failed",
+      error: "Background task \"missing\" was not found.",
+    });
+  });
+
+  it("rechaza backgroundTaskId vacío", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentRunBackgroundTaskTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.run_background_task",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        backgroundTaskId: "   ",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "backgroundTaskId must be a non-empty string.",
+    );
+  });
+
+  it("rechaza ejecución sin runtime.ollamaHost", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-agent-tool-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const registry = createToolRegistry([ agentRunBackgroundTaskTool ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "agent.run_background_task",
+      sessionId: "session-parent",
+      cwd: tempDir,
+      input: {
+        backgroundTaskId: "agent_background_task_test",
+      },
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expectErrorResult(result);
+    expect(result.error.code).toBe("missing_runtime_context");
+    expect(result.error.message).toBe(
+      "agent.run_background_task requires runtime.ollamaHost.",
     );
   });
 });

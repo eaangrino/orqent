@@ -76,5 +76,12 @@ describe("buildAgentCatalogPrompt", () => {
     expect(prompt).toContain(
       'When agent.spawn returns execution.status = "background_queued"',
     );
+    expect(prompt).toContain(
+      "use agent.run_background_task when a backgroundTaskId is available",
+    );
+
+    expect(prompt).toContain(
+      "agent.run_background_task executes a queued background task through the runtime",
+    );
   });
 });

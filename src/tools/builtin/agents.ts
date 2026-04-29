@@ -30,6 +30,7 @@ import type {
   OllamaGenerationOptions,
   OllamaThinkingMode,
 } from "../../models/ollama/index.js";
+import { runQueuedBackgroundTask } from "../../runtime/background-task-runner.js";
 
 type AgentCreateDefinitionInput = {
   identifier: string;
@@ -131,6 +132,26 @@ export type AgentListBackgroundTasksResult = {
   backgroundTasks: AgentBackgroundTaskState[];
   count: number;
   filePath: string;
+};
+
+type AgentRunBackgroundTaskInput = {
+  backgroundTaskId: string;
+};
+
+export type AgentRunBackgroundTaskResult = {
+  backgroundTask: AgentBackgroundTaskState | null;
+  instance: AgentInstance | null;
+  taskState: AgentTaskState | null;
+  execution:
+  | {
+    status: "completed";
+    response: string;
+    model: string;
+  }
+  | {
+    status: "failed";
+    error: string;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -368,6 +389,17 @@ function toAgentDefinitionSummary(
   };
 }
 
+function isOllamaThinkingMode(value: unknown): value is OllamaThinkingMode {
+  return (
+    value === "default" ||
+    value === "disabled" ||
+    value === "enabled" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high"
+  );
+}
+
 function isOllamaGenerationOptions(
   value: unknown,
 ): value is OllamaGenerationOptions {
@@ -377,22 +409,17 @@ function isOllamaGenerationOptions(
 
   return (
     typeof value.temperature === "number" &&
+    Number.isFinite(value.temperature) &&
     typeof value.topP === "number" &&
+    Number.isFinite(value.topP) &&
     typeof value.topK === "number" &&
+    Number.isFinite(value.topK) &&
     typeof value.numCtx === "number" &&
+    Number.isFinite(value.numCtx) &&
     typeof value.numPredict === "number" &&
-    typeof value.repeatPenalty === "number"
-  );
-}
-
-function isOllamaThinkingMode(value: unknown): value is OllamaThinkingMode {
-  return (
-    value === "default" ||
-    value === "disabled" ||
-    value === "enabled" ||
-    value === "low" ||
-    value === "medium" ||
-    value === "high"
+    Number.isFinite(value.numPredict) &&
+    typeof value.repeatPenalty === "number" &&
+    Number.isFinite(value.repeatPenalty)
   );
 }
 
@@ -658,6 +685,36 @@ function validateAgentListBackgroundTasksInput(
     input: normalizedInput,
   };
 }
+
+function validateAgentRunBackgroundTaskInput(
+  input: unknown,
+): ToolValidationResult<AgentRunBackgroundTaskInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "input must be an object.",
+    };
+  }
+
+  if (
+    typeof input.backgroundTaskId !== "string" ||
+    !input.backgroundTaskId.trim()
+  ) {
+    return {
+      ok: false,
+      error: "backgroundTaskId must be a non-empty string.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      backgroundTaskId: input.backgroundTaskId.trim(),
+    },
+  };
+}
+
+
 
 // Export tools 
 
@@ -1160,6 +1217,103 @@ export const agentListBackgroundTasksTool: ToolDefinition<
         backgroundTasks: filteredTasks,
         count: filteredTasks.length,
         filePath: getAgentBackgroundTasksIndexFilePath(),
+      },
+    };
+  },
+};
+
+export const agentRunBackgroundTaskTool: ToolDefinition<
+  AgentRunBackgroundTaskInput,
+  AgentRunBackgroundTaskResult
+> = {
+  name: "agent.run_background_task",
+  description:
+    "Execute a queued persistent background subagent task now. This transitions the background task through running and then completed or failed.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      backgroundTaskId: {
+        type: "string",
+        description:
+          "Persistent background task id created by agent.spawn with runInBackground=true.",
+      },
+    },
+    required: [ "backgroundTaskId" ],
+    additionalProperties: false,
+  },
+  risk: "medium",
+  permissions: [ "agents:write" ],
+  requiresConfirmation: true,
+  isReadOnly: false,
+  timeoutMs: 120_000,
+  validateInput: validateAgentRunBackgroundTaskInput,
+  async execute(input, context) {
+    if (!context.runtime?.ollamaHost) {
+      return {
+        ok: false,
+        error: {
+          code: "missing_runtime_context",
+          message:
+            "agent.run_background_task requires runtime.ollamaHost.",
+        },
+      };
+    }
+
+    if (!context.runtime.activeModel) {
+      return {
+        ok: false,
+        error: {
+          code: "missing_runtime_context",
+          message:
+            "agent.run_background_task requires runtime.activeModel.",
+        },
+      };
+    }
+
+    const generationOptions = isOllamaGenerationOptions(
+      context.runtime.generationOptions,
+    )
+      ? context.runtime.generationOptions
+      : undefined;
+
+    const thinkingMode = isOllamaThinkingMode(context.runtime.thinkingMode)
+      ? context.runtime.thinkingMode
+      : undefined;
+
+    const result = await runQueuedBackgroundTask({
+      backgroundTaskId: input.backgroundTaskId,
+      host: context.runtime.ollamaHost,
+      fallbackModel: context.runtime.activeModel,
+      generationOptions,
+      thinkingMode,
+    });
+
+    if (!result.ok) {
+      return {
+        ok: true,
+        result: {
+          backgroundTask: result.backgroundTask,
+          instance: result.instance,
+          taskState: result.taskState,
+          execution: {
+            status: "failed",
+            error: result.error,
+          },
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      result: {
+        backgroundTask: result.backgroundTask,
+        instance: result.instance,
+        taskState: result.taskState,
+        execution: {
+          status: "completed",
+          response: result.response,
+          model: result.model,
+        },
       },
     };
   },

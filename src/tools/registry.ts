@@ -12,6 +12,7 @@ import {
   agentListDefinitionsTool,
   agentListTasksTool,
   agentReadTranscriptTool,
+  agentRunBackgroundTaskTool,
   agentSpawnTool,
 } from "./builtin/agents.js";
 
@@ -84,6 +85,7 @@ export const builtinTools: AnyToolDefinition[] = [
   agentListTasksTool,
   agentReadTranscriptTool,
   agentListBackgroundTasksTool,
+  agentRunBackgroundTaskTool,
 ];
 
 export const defaultToolRegistry = createToolRegistry(builtinTools);

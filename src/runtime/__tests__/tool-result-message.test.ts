@@ -162,4 +162,33 @@ describe("tool-result-message", () => {
     expect(message.role).toBe("user");
     expect(message.content).toContain("<tool_result>");
   });
+
+  it("incluye guía específica cuando agent.run_background_task completed", () => {
+    const result: ToolExecutionResult = {
+      ok: true,
+      result: {
+        execution: {
+          status: "completed",
+          response: "Background task done.",
+          model: "gemma4:e4b",
+        },
+      },
+    };
+
+    const content = buildToolResultContent({
+      toolName: "agent.run_background_task",
+      input: {
+        backgroundTaskId: "agent_background_task_test",
+      },
+      result,
+    });
+
+    expect(content).toContain("Agent background task result handling:");
+    expect(content).toContain('If execution.status is "completed"');
+    expect(content).toContain(
+      "use execution.response as the actual background subagent result",
+    );
+    expect(content).toContain("Current execution.status: completed");
+    expect(content).toContain("Background task done.");
+  });
 });
