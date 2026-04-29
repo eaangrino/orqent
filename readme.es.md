@@ -1,4 +1,6 @@
-# Orqent
+<p align="center">
+  <img src="./src/assets/cover_logo.svg" alt="Logo del proyecto" width="620" />
+</p>
 
 **Orqent** es un agent runtime local, controlable y extensible, construido en **TypeScript**, orientado a terminal/TUI, con **Gemma 4** ejecutándose sobre **Ollama** como motor base del modelo.
 
