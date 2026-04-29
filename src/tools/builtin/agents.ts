@@ -7,6 +7,7 @@ import {
   getAgentTaskStatesIndexFilePath,
   getAgentTranscriptFilePath,
   listAgentBackgroundTasks,
+  listAgentChildTaskSnapshots,
   listAgentDefinitions,
   listAgentTaskStates,
   readAgentDefinition,
@@ -16,6 +17,7 @@ import {
   upsertAgentInstance,
   upsertAgentTaskState,
   type AgentBackgroundTaskState,
+  type AgentChildTaskSnapshot,
   type AgentDefinition,
   type AgentDefinitionInput,
   type AgentDefinitionScope,
@@ -152,6 +154,17 @@ export type AgentRunBackgroundTaskResult = {
     status: "failed";
     error: string;
   };
+};
+
+type AgentInspectChildrenInput = {
+  parentSessionId?: string;
+  includeTranscript: boolean;
+};
+
+export type AgentInspectChildrenResult = {
+  parentSessionId: string;
+  children: AgentChildTaskSnapshot[];
+  count: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -714,7 +727,56 @@ function validateAgentRunBackgroundTaskInput(
   };
 }
 
+function validateAgentInspectChildrenInput(
+  input: unknown,
+): ToolValidationResult<AgentInspectChildrenInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "input must be an object.",
+    };
+  }
 
+  const normalizedInput: AgentInspectChildrenInput = {
+    includeTranscript: false,
+  };
+
+  if (input.parentSessionId !== undefined) {
+    if (typeof input.parentSessionId !== "string") {
+      return {
+        ok: false,
+        error: "parentSessionId must be a string when provided.",
+      };
+    }
+
+    const parentSessionId = input.parentSessionId.trim();
+
+    if (!parentSessionId) {
+      return {
+        ok: false,
+        error: "parentSessionId must not be empty when provided.",
+      };
+    }
+
+    normalizedInput.parentSessionId = parentSessionId;
+  }
+
+  if (input.includeTranscript !== undefined) {
+    if (typeof input.includeTranscript !== "boolean") {
+      return {
+        ok: false,
+        error: "includeTranscript must be a boolean when provided.",
+      };
+    }
+
+    normalizedInput.includeTranscript = input.includeTranscript;
+  }
+
+  return {
+    ok: true,
+    input: normalizedInput,
+  };
+}
 
 // Export tools 
 
@@ -1314,6 +1376,53 @@ export const agentRunBackgroundTaskTool: ToolDefinition<
           response: result.response,
           model: result.model,
         },
+      },
+    };
+  },
+};
+
+export const agentInspectChildrenTool: ToolDefinition<
+  AgentInspectChildrenInput,
+  AgentInspectChildrenResult
+> = {
+  name: "agent.inspect_children",
+  description:
+    "Inspect child subagent work for a parent chat session. Returns a consolidated parent-child view with instances, task states, background task states, and optionally isolated transcripts.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      parentSessionId: {
+        type: "string",
+        description:
+          "Optional parent chat session id. If omitted, the current runtime session id is used.",
+      },
+      includeTranscript: {
+        type: "boolean",
+        description:
+          "When true, include isolated transcript entries for each child subagent instance.",
+      },
+    },
+    additionalProperties: false,
+  },
+  risk: "low",
+  permissions: [ "agents:read" ],
+  requiresConfirmation: false,
+  isReadOnly: true,
+  validateInput: validateAgentInspectChildrenInput,
+  async execute(input, context) {
+    const parentSessionId = input.parentSessionId ?? context.sessionId;
+
+    const children = await listAgentChildTaskSnapshots({
+      parentSessionId,
+      includeTranscript: input.includeTranscript,
+    });
+
+    return {
+      ok: true,
+      result: {
+        parentSessionId,
+        children,
+        count: children.length,
       },
     };
   },

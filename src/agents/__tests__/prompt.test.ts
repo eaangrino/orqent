@@ -61,27 +61,41 @@ describe("buildAgentCatalogPrompt", () => {
     expect(prompt).toContain(
       'When agent.spawn returns execution.status = "stubbed"',
     );
+
     expect(prompt).toContain(
       'When agent.spawn returns execution.status = "completed"',
     );
+
     expect(prompt).toContain(
       'When agent.spawn returns execution.status = "failed"',
     );
+
     expect(prompt).toContain(
       "Current synchronous subagent execution performs a direct model call with isolated context",
     );
+
     expect(prompt).toContain(
       "Do not claim that an agent inspected files, used tools, executed commands, ran in background, or modified external state",
     );
+
     expect(prompt).toContain(
       'When agent.spawn returns execution.status = "background_queued"',
     );
+
     expect(prompt).toContain(
       "use agent.run_background_task when a backgroundTaskId is available",
     );
 
     expect(prompt).toContain(
       "agent.run_background_task executes a queued background task through the runtime",
+    );
+
+    expect(prompt).toContain(
+      "use agent.inspect_children",
+    );
+
+    expect(prompt).toContain(
+      "agent.inspect_children can inspect child subagent work for the current session",
     );
   });
 });
