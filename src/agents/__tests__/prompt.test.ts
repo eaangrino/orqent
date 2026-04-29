@@ -27,10 +27,16 @@ describe("buildAgentCatalogPrompt", () => {
     expect(prompt).toContain("Persistent agent catalog:");
     expect(prompt).toContain("No persistent agents are currently registered.");
     expect(prompt).toContain(
-      "agent.spawn without executeNow creates a persistent agent instance",
+      "agent.spawn requires both executeNow and runInBackground explicitly",
     );
     expect(prompt).toContain(
-      "agent.spawn with executeNow=true runs the subagent synchronously",
+      "executeNow=false and runInBackground=false creates a persistent agent instance",
+    );
+    expect(prompt).toContain(
+      "executeNow=true and runInBackground=false runs the subagent synchronously",
+    );
+    expect(prompt).toContain(
+      "executeNow=false and runInBackground=true creates a queued persistent background task",
     );
   });
 
@@ -49,7 +55,7 @@ describe("buildAgentCatalogPrompt", () => {
     expect(prompt).not.toContain("Private agent system prompt.");
   });
 
-  it("incluye reglas para diferenciar spawn preparado y ejecutado", () => {
+  it("incluye reglas para diferenciar spawn preparado, ejecutado y background", () => {
     const prompt = buildAgentCatalogPrompt([ createAgent() ]);
 
     expect(prompt).toContain(
@@ -65,7 +71,10 @@ describe("buildAgentCatalogPrompt", () => {
       "Current synchronous subagent execution performs a direct model call with isolated context",
     );
     expect(prompt).toContain(
-      "Do not claim that an agent inspected files, used tools, executed commands, or modified external state",
+      "Do not claim that an agent inspected files, used tools, executed commands, ran in background, or modified external state",
+    );
+    expect(prompt).toContain(
+      'When agent.spawn returns execution.status = "background_queued"',
     );
   });
 });

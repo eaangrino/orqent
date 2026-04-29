@@ -58,6 +58,39 @@ describe("tool-result-message", () => {
     expect(content).toContain("Current execution.status: stubbed");
   });
 
+  it("incluye guía específica cuando agent.spawn queda background_queued", () => {
+    const result: ToolExecutionResult = {
+      ok: true,
+      result: {
+        execution: {
+          status: "background_queued",
+          backgroundTaskId: "agent_background_task_test",
+          message:
+            "Agent instance, task state, and background task were persisted. Background execution is not implemented yet.",
+        },
+      },
+    };
+
+    const content = buildToolResultContent({
+      toolName: "agent.spawn",
+      input: {
+        agentIdentifier: "planner",
+        taskInput: "Plan work.",
+        executeNow: false,
+        runInBackground: true,
+      },
+      result,
+    });
+
+    expect(content).toContain("Agent spawn result handling:");
+    expect(content).toContain('If execution.status is "background_queued"');
+    expect(content).toContain(
+      "report only that the background task was queued",
+    );
+    expect(content).toContain("Do not claim that it executed");
+    expect(content).toContain("Current execution.status: background_queued");
+  });
+
   it("incluye guía específica cuando agent.spawn completed trae respuesta del subagente", () => {
     const result: ToolExecutionResult = {
       ok: true,

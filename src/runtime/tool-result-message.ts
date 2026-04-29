@@ -51,9 +51,10 @@ function buildAgentSpawnGuidance(result: ToolExecutionResult): string | null {
     "Agent spawn result handling:",
     "- This tool result is the ground truth for the delegated subagent operation.",
     '- If execution.status is "stubbed", report only that the agent instance and task state were created. Do not invent a child-agent answer.',
+    '- If execution.status is "background_queued", report only that the background task was queued. Do not claim that it executed, completed, inspected files, or produced a child-agent answer.',
     '- If execution.status is "completed", use execution.response as the actual child-agent result and summarize it for the user.',
     '- If execution.status is "failed", report the returned execution.error.',
-    "- Do not claim that the child agent inspected files, used tools, executed commands, or modified external state unless the tool result explicitly proves it.",
+    "- Do not claim that the child agent inspected files, used tools, executed commands, ran in background, or modified external state unless the tool result explicitly proves it.",
     `- Current execution.status: ${status}`,
   ].join("\n");
 }
