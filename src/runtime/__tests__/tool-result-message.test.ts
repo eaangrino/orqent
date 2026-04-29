@@ -191,4 +191,74 @@ describe("tool-result-message", () => {
     expect(content).toContain("Current execution.status: completed");
     expect(content).toContain("Background task done.");
   });
+
+  it("incluye guía específica cuando agent.inspect_children devuelve hijos", () => {
+    const result: ToolExecutionResult = {
+      ok: true,
+      result: {
+        parentSessionId: "session-parent",
+        count: 1,
+        summary:
+          "Parent session session-parent has 1 child subagent task(s).\n\nChild 1:\n- agentIdentifier: planner-bg-test\n- instance.status: completed\n- task.status: completed\n- background.status: completed\n- with persisted result\n- with 3 transcript entrie(s)",
+        children: [
+          {
+            agentIdentifier: "planner-bg-test",
+            instanceId: "agent_instance_test",
+            taskId: "agent_task_test",
+            status: {
+              instance: "completed",
+              task: "completed",
+              background: "completed",
+            },
+            result: "Plan ready.",
+            error: null,
+            transcript: [
+              {
+                role: "system",
+                content: "System prompt.",
+              },
+              {
+                role: "user",
+                content: "Plan work.",
+              },
+              {
+                role: "assistant",
+                content: "Plan ready.",
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const content = buildToolResultContent({
+      toolName: "agent.inspect_children",
+      input: {
+        includeTranscript: true,
+      },
+      result,
+    });
+
+    expect(content).toContain("Agent child inspection readable result:");
+    expect(content).toContain("Answering rule:");
+    expect(content).toContain(
+      "Base the user-facing answer on the readable result above.",
+    );
+    expect(content).toContain(
+      "Do not summarize this as a generic process execution.",
+    );
+
+    expect(content).toContain("Agent child inspection result handling:");
+    expect(content).toContain(
+      "This tool result is the ground truth for parent-child subagent coordination.",
+    );
+    expect(content).toContain(
+      "Do not invent users, conversations, dates, external tools, APIs, files, commands, or business data",
+    );
+
+    expect(content).toContain(
+      "Parent session session-parent has 1 child subagent task(s).",
+    );
+    expect(content).toContain("Plan ready.");
+  });
 });

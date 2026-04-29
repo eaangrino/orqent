@@ -64,6 +64,21 @@ export type RunSubagentTaskResult =
     error: string;
   };
 
+export type ExecuteSubagentInstanceTaskInput = {
+  definition: AgentDefinition;
+  instance: AgentInstance;
+  taskState: AgentTaskState;
+  host: string;
+  fallbackModel: string | null;
+  modelOverride?: string | null;
+  generationOptions?: OllamaGenerationOptions;
+  thinkingMode?: OllamaThinkingMode;
+  chatRunner?: SubagentChatRunner;
+  metadata?: Record<string, unknown>;
+};
+
+export type ExecuteSubagentInstanceTaskResult = RunSubagentTaskResult;
+
 function normalizeNullableString(value: string | null | undefined): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -127,11 +142,10 @@ async function defaultSubagentChatRunner({
   });
 }
 
-export async function runSubagentTask({
+export async function executeSubagentInstanceTask({
   definition,
-  parentSessionId,
-  cwd,
-  taskInput,
+  instance,
+  taskState,
   host,
   fallbackModel,
   modelOverride,
@@ -139,35 +153,43 @@ export async function runSubagentTask({
   thinkingMode,
   chatRunner = defaultSubagentChatRunner,
   metadata,
-}: RunSubagentTaskInput): Promise<RunSubagentTaskResult> {
+}: ExecuteSubagentInstanceTaskInput): Promise<ExecuteSubagentInstanceTaskResult> {
   const effectiveModel = resolveEffectiveModel({
     modelOverride,
     definitionModel: definition.model,
     fallbackModel,
   });
 
-  let { instance, taskState } = createAgentInstance({
-    definition,
-    parentSessionId,
-    cwd,
-    taskInput,
-    modelOverride: effectiveModel,
-    metadata,
-  });
+  let nextInstance: AgentInstance = {
+    ...instance,
+    model: effectiveModel,
+    metadata: {
+      ...(instance.metadata ?? {}),
+      ...(metadata ?? {}),
+    },
+  };
 
-  await upsertAgentInstance(instance);
-  await upsertAgentTaskState(taskState);
+  let nextTaskState: AgentTaskState = {
+    ...taskState,
+    metadata: {
+      ...(taskState.metadata ?? {}),
+      ...(metadata ?? {}),
+    },
+  };
 
-  instance = markAgentInstanceRunning(instance);
-  taskState = markAgentTaskRunning(taskState);
+  await upsertAgentInstance(nextInstance);
+  await upsertAgentTaskState(nextTaskState);
 
-  await upsertAgentInstance(instance);
-  await upsertAgentTaskState(taskState);
+  nextInstance = markAgentInstanceRunning(nextInstance);
+  nextTaskState = markAgentTaskRunning(nextTaskState);
+
+  await upsertAgentInstance(nextInstance);
+  await upsertAgentTaskState(nextTaskState);
 
   try {
-    const subagentSystemPrompt = buildSubagentSystemPrompt(instance);
+    const subagentSystemPrompt = buildSubagentSystemPrompt(nextInstance);
 
-    await appendAgentTranscriptEntry(instance, {
+    await appendAgentTranscriptEntry(nextInstance, {
       role: "system",
       content: subagentSystemPrompt,
       model: effectiveModel,
@@ -176,9 +198,9 @@ export async function runSubagentTask({
       },
     });
 
-    await appendAgentTranscriptEntry(instance, {
+    await appendAgentTranscriptEntry(nextInstance, {
       role: "user",
-      content: taskState.input,
+      content: nextTaskState.input,
       model: effectiveModel,
       metadata: {
         type: "subagent_task_input",
@@ -201,20 +223,20 @@ export async function runSubagentTask({
         },
         {
           role: "user",
-          content: taskState.input,
+          content: nextTaskState.input,
         },
       ],
     });
 
     const response = result.response.trim() || "(empty subagent response)";
 
-    instance = markAgentInstanceCompleted(instance);
-    taskState = markAgentTaskCompleted(taskState, response);
+    nextInstance = markAgentInstanceCompleted(nextInstance);
+    nextTaskState = markAgentTaskCompleted(nextTaskState, response);
 
-    await upsertAgentInstance(instance);
-    await upsertAgentTaskState(taskState);
+    await upsertAgentInstance(nextInstance);
+    await upsertAgentTaskState(nextTaskState);
 
-    await appendAgentTranscriptEntry(instance, {
+    await appendAgentTranscriptEntry(nextInstance, {
       role: "assistant",
       content: response,
       model: result.model,
@@ -225,8 +247,8 @@ export async function runSubagentTask({
 
     return {
       ok: true,
-      instance,
-      taskState,
+      instance: nextInstance,
+      taskState: nextTaskState,
       response,
       model: result.model,
     };
@@ -236,13 +258,13 @@ export async function runSubagentTask({
         ? error_.message
         : "Unknown subagent execution error.";
 
-    instance = markAgentInstanceFailed(instance);
-    taskState = markAgentTaskFailed(taskState, message);
+    nextInstance = markAgentInstanceFailed(nextInstance);
+    nextTaskState = markAgentTaskFailed(nextTaskState, message);
 
-    await upsertAgentInstance(instance);
-    await upsertAgentTaskState(taskState);
+    await upsertAgentInstance(nextInstance);
+    await upsertAgentTaskState(nextTaskState);
 
-    await appendAgentTranscriptEntry(instance, {
+    await appendAgentTranscriptEntry(nextInstance, {
       role: "assistant",
       content: `Error: ${message}`,
       model: effectiveModel,
@@ -254,9 +276,51 @@ export async function runSubagentTask({
 
     return {
       ok: false,
-      instance,
-      taskState,
+      instance: nextInstance,
+      taskState: nextTaskState,
       error: message,
     };
   }
+}
+
+export async function runSubagentTask({
+  definition,
+  parentSessionId,
+  cwd,
+  taskInput,
+  host,
+  fallbackModel,
+  modelOverride,
+  generationOptions,
+  thinkingMode,
+  chatRunner = defaultSubagentChatRunner,
+  metadata,
+}: RunSubagentTaskInput): Promise<RunSubagentTaskResult> {
+  const effectiveModel = resolveEffectiveModel({
+    modelOverride,
+    definitionModel: definition.model,
+    fallbackModel,
+  });
+
+  const { instance, taskState } = createAgentInstance({
+    definition,
+    parentSessionId,
+    cwd,
+    taskInput,
+    modelOverride: effectiveModel,
+    metadata,
+  });
+
+  return executeSubagentInstanceTask({
+    definition,
+    instance,
+    taskState,
+    host,
+    fallbackModel,
+    modelOverride: effectiveModel,
+    generationOptions,
+    thinkingMode,
+    chatRunner,
+    metadata,
+  });
 }

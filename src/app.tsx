@@ -107,6 +107,80 @@ function transcriptEntriesToChatMessages(
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatInspectChildrenFinalResponse(
+  result: Awaited<ReturnType<typeof executeModelToolCall>>,
+): string | null {
+  if (result.kind !== "tool_call_executed") {
+    return null;
+  }
+
+  if (result.toolCall.toolName !== "agent.inspect_children") {
+    return null;
+  }
+
+  if (!result.executionResult.ok) {
+    return null;
+  }
+
+  const payload = result.executionResult.result;
+
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const summary =
+    typeof payload.summary === "string" ? payload.summary.trim() : "";
+  const children = Array.isArray(payload.children) ? payload.children : [];
+
+  if (!summary) {
+    return null;
+  }
+
+  const childDetails = children
+    .filter(isRecord)
+    .map((child, index) => {
+      const status = isRecord(child.status) ? child.status : {};
+      const transcript = Array.isArray(child.transcript)
+        ? child.transcript
+        : [];
+
+      const resultText =
+        typeof child.result === "string" && child.result.trim()
+          ? child.result.trim()
+          : null;
+
+      return [
+        `## Hijo ${index + 1}`,
+        "",
+        `- Agente: \`${String(child.agentIdentifier ?? "unknown")}\``,
+        `- Instance ID: \`${String(child.instanceId ?? "unknown")}\``,
+        `- Task ID: \`${String(child.taskId ?? "unknown")}\``,
+        `- Background Task ID: \`${String(child.backgroundTaskId ?? "none")}\``,
+        `- Estado instancia: \`${String(status.instance ?? "none")}\``,
+        `- Estado task: \`${String(status.task ?? "none")}\``,
+        `- Estado background: \`${String(status.background ?? "none")}\``,
+        `- Transcript aislado: ${transcript.length > 0 ? `sí, ${transcript.length} entrada(s)` : "no"}`,
+        "",
+        resultText
+          ? `### Resultado persistido\n\n${resultText}`
+          : "### Resultado persistido\n\nNo hay resultado persistido.",
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return [
+    "Inspección padre-hijo completada.",
+    "",
+    summary,
+    "",
+    childDetails || "No hay subagentes hijos para esta sesión.",
+  ].join("\n");
+}
+
 function formatToolExecutionFallbackResponse({
   toolName,
   result,
@@ -644,6 +718,14 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
 
           toolRoundsUsed++;
           executedToolNames.push(toolExecution.toolCall.toolName);
+
+          const deterministicResponse =
+            formatInspectChildrenFinalResponse(toolExecution);
+
+          if (deterministicResponse) {
+            finalResponse = deterministicResponse;
+            break;
+          }
 
           const toolResultMessage = buildToolResultMessage({
             toolName: toolExecution.toolCall.toolName,

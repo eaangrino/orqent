@@ -1581,6 +1581,10 @@ describe("agent.inspect_children", () => {
 
     expect(result.result.parentSessionId).toBe("session-parent");
     expect(result.result.count).toBe(1);
+    expect(result.result.summary).toContain(
+      "Parent session session-parent has 1 child subagent task(s).",
+    );
+    expect(result.result.summary).toContain("agentIdentifier: planner");
     expect(result.result.children[ 0 ]).toMatchObject({
       parentSessionId: "session-parent",
       agentIdentifier: "planner",
@@ -1672,6 +1676,7 @@ describe("agent.inspect_children", () => {
     expect(result.result.children[ 0 ]?.transcript[ 0 ]?.content).toBe(
       "Plan child work.",
     );
+    expect(result.result.children[ 0 ]?.transcript[ 0 ]?.metadataType).toBeNull();
   });
 
   it("filtra por parentSessionId explícito", async () => {

@@ -161,10 +161,35 @@ type AgentInspectChildrenInput = {
   includeTranscript: boolean;
 };
 
+type AgentInspectChildTranscriptEntrySummary = {
+  role: string;
+  content: string;
+  model: string | null;
+  metadataType: string | null;
+};
+
+type AgentInspectChildSummary = {
+  parentSessionId: string;
+  agentIdentifier: string;
+  instanceId: string;
+  taskId: string;
+  backgroundTaskId: string | null;
+  status: {
+    instance: string;
+    task: string | null;
+    background: string | null;
+  };
+  input: string | null;
+  result: string | null;
+  error: string | null;
+  transcript: AgentInspectChildTranscriptEntrySummary[];
+};
+
 export type AgentInspectChildrenResult = {
   parentSessionId: string;
-  children: AgentChildTaskSnapshot[];
   count: number;
+  summary: string;
+  children: AgentInspectChildSummary[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1381,6 +1406,92 @@ export const agentRunBackgroundTaskTool: ToolDefinition<
   },
 };
 
+const INSPECT_CHILDREN_TEXT_LIMIT = 4_000;
+
+function truncateText(value: string | null, maxLength = INSPECT_CHILDREN_TEXT_LIMIT): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (normalizedValue.length <= maxLength) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, maxLength - 1)}…`;
+}
+
+function readMetadataType(metadata: Record<string, unknown> | undefined): string | null {
+  if (!metadata) {
+    return null;
+  }
+
+  return typeof metadata.type === "string" ? metadata.type : null;
+}
+
+function toInspectChildSummary(
+  child: AgentChildTaskSnapshot,
+): AgentInspectChildSummary {
+  return {
+    parentSessionId: child.parentSessionId,
+    agentIdentifier: child.agentIdentifier,
+    instanceId: child.instanceId,
+    taskId: child.taskId,
+    backgroundTaskId: child.backgroundTask?.backgroundTaskId ?? null,
+    status: {
+      instance: child.status.instance,
+      task: child.status.task,
+      background: child.status.background,
+    },
+    input: truncateText(child.input, 1_000),
+    result: truncateText(child.result),
+    error: truncateText(child.error, 1_000),
+    transcript: child.transcript.map((entry) => ({
+      role: entry.role,
+      content: truncateText(entry.content, 2_000) ?? "",
+      model: entry.model ?? null,
+      metadataType: readMetadataType(entry.metadata),
+    })),
+  };
+}
+
+function buildInspectChildrenSummary({
+  parentSessionId,
+  children,
+}: {
+  parentSessionId: string;
+  children: AgentInspectChildSummary[];
+}): string {
+  if (children.length === 0) {
+    return `Parent session ${parentSessionId} has no child subagent work.`;
+  }
+
+  return [
+    `Parent session ${parentSessionId} has ${children.length} child subagent task(s).`,
+    ...children.map((child, index) => {
+      const resultState = child.result ? "with persisted result" : "without persisted result";
+      const transcriptState =
+        child.transcript.length > 0
+          ? `with ${child.transcript.length} transcript entrie(s)`
+          : "without transcript entries";
+
+      return [
+        `Child ${index + 1}:`,
+        `- agentIdentifier: ${child.agentIdentifier}`,
+        `- instanceId: ${child.instanceId}`,
+        `- taskId: ${child.taskId}`,
+        `- backgroundTaskId: ${child.backgroundTaskId ?? "none"}`,
+        `- instance.status: ${child.status.instance}`,
+        `- task.status: ${child.status.task ?? "none"}`,
+        `- background.status: ${child.status.background ?? "none"}`,
+        `- ${resultState}`,
+        `- ${transcriptState}`,
+      ].join("\n");
+    }),
+  ].join("\n\n");
+}
+
 export const agentInspectChildrenTool: ToolDefinition<
   AgentInspectChildrenInput,
   AgentInspectChildrenResult
@@ -1412,17 +1523,23 @@ export const agentInspectChildrenTool: ToolDefinition<
   async execute(input, context) {
     const parentSessionId = input.parentSessionId ?? context.sessionId;
 
-    const children = await listAgentChildTaskSnapshots({
+    const snapshots = await listAgentChildTaskSnapshots({
       parentSessionId,
       includeTranscript: input.includeTranscript,
     });
+
+    const children = snapshots.map(toInspectChildSummary);
 
     return {
       ok: true,
       result: {
         parentSessionId,
-        children,
         count: children.length,
+        summary: buildInspectChildrenSummary({
+          parentSessionId,
+          children,
+        }),
+        children,
       },
     };
   },

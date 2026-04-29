@@ -61,7 +61,7 @@ export function buildAgentCatalogPrompt(agents: AgentDefinition[]): string {
     "- Never set executeNow=true and runInBackground=true at the same time.",
     "- agent.spawn with executeNow=false and runInBackground=false creates a persistent agent instance and independent task state, but does not execute the subagent.",
     "- agent.spawn with executeNow=true and runInBackground=false runs the subagent synchronously and returns execution.status as completed or failed.",
-    "- agent.spawn with executeNow=false and runInBackground=true creates a queued persistent background task. Background execution is not implemented yet.",
+    "- agent.spawn with executeNow=false and runInBackground=true creates a queued persistent background task. It can be executed explicitly with agent.run_background_task; automatic background workers are not implemented yet.",
     "- agent.run_background_task executes a queued background task through the runtime and returns execution.status as completed or failed.",
     "- Current synchronous subagent execution performs a direct model call with isolated context. It does not run internal subagent tool calling yet.",
     "- When agent.spawn returns execution.status = \"stubbed\", report only that the agent instance/task was created. Do not invent a child-agent result.",

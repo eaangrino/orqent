@@ -16,7 +16,7 @@ import type {
   OllamaThinkingMode,
 } from "../models/ollama/index.js";
 import {
-  runSubagentTask,
+  executeSubagentInstanceTask,
   type SubagentChatRunner,
 } from "./subagent-runner.js";
 
@@ -154,11 +154,10 @@ export async function runQueuedBackgroundTask({
     markAgentBackgroundTaskRunning(backgroundTask),
   );
 
-  const result = await runSubagentTask({
+  const result = await executeSubagentInstanceTask({
     definition,
-    parentSessionId: backgroundTask.parentSessionId,
-    cwd: backgroundTask.cwd,
-    taskInput: backgroundTask.input,
+    instance,
+    taskState,
     host,
     fallbackModel,
     modelOverride: instance.model,

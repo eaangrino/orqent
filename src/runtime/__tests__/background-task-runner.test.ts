@@ -12,6 +12,8 @@ import {
   upsertAgentDefinition,
   upsertAgentInstance,
   upsertAgentTaskState,
+  listAgentInstances,
+  listAgentTaskStates,
   type AgentDefinition,
 } from "../../agents/index.js";
 import {
@@ -93,7 +95,8 @@ describe("background-task-runner", () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-bg-runner-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;
 
-    const { backgroundTask } = await seedQueuedBackgroundTask();
+    const { backgroundTask, instance, taskState } =
+      await seedQueuedBackgroundTask();
 
     const chatRunner = vi.fn<SubagentChatRunner>().mockResolvedValue({
       model: "gemma4:e4b",
@@ -119,6 +122,16 @@ describe("background-task-runner", () => {
     expect(result.backgroundTask.error).toBeNull();
     expect(result.backgroundTask.startedAt).not.toBeNull();
     expect(result.backgroundTask.completedAt).not.toBeNull();
+    expect(result.instance.instanceId).toBe(instance.instanceId);
+    expect(result.taskState.taskId).toBe(taskState.taskId);
+
+    const instances = await listAgentInstances();
+    const taskStates = await listAgentTaskStates();
+
+    expect(instances).toHaveLength(1);
+    expect(taskStates).toHaveLength(1);
+    expect(instances[ 0 ]?.instanceId).toBe(instance.instanceId);
+    expect(taskStates[ 0 ]?.taskId).toBe(taskState.taskId);
 
     await expect(
       readAgentBackgroundTask(backgroundTask.backgroundTaskId),
