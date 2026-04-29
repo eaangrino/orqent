@@ -12,9 +12,9 @@ const helpText = `
     $ orqent resume <sessionId>
 
   Options
-    --help     Mostrar ayuda
-    --version  Mostrar versión
-    --reset    Reiniciar la configuración persistida
+    --help     Show help
+    --version  Show version
+    --reset    Reset the persisted configuration
 
   Examples
     $ orqent
@@ -109,7 +109,7 @@ export async function runCli(deps: CliDeps = {}) {
 
   if (cli.flags.reset) {
     await resetStateImpl();
-    logImpl(`Configuración reiniciada: ${getOllamaConfigFilePath()}`);
+    logImpl(`Configuration reset: ${getOllamaConfigFilePath()}`);
     return;
   }
 

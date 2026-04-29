@@ -26,7 +26,7 @@ const generationOptionItems: GenerationOptionItem[] = [
   {
     key: "temperature",
     label: "Temperature",
-    description: "Creatividad. Bajo = más determinista, alto = más variado.",
+    description: "Creativity. Low = more deterministic, high = more varied.",
     min: 0,
     max: 2,
     step: 0.1,
@@ -34,7 +34,7 @@ const generationOptionItems: GenerationOptionItem[] = [
   {
     key: "topP",
     label: "Top P",
-    description: "Muestreo nucleus. Limita masa probabilística acumulada.",
+    description: "Nucleus sampling. Limits the accumulated probability mass.",
     min: 0,
     max: 1,
     step: 0.05,
@@ -42,7 +42,7 @@ const generationOptionItems: GenerationOptionItem[] = [
   {
     key: "topK",
     label: "Top K",
-    description: "Número máximo de tokens candidatos por paso.",
+    description: "Maximum number of candidate tokens per step.",
     min: 1,
     max: 200,
     step: 1,
@@ -51,7 +51,7 @@ const generationOptionItems: GenerationOptionItem[] = [
   {
     key: "numCtx",
     label: "Context window",
-    description: "Tokens máximos de contexto solicitados a Ollama.",
+    description: "Maximum context tokens requested from Ollama.",
     min: 512,
     max: 262144,
     step: 1024,
@@ -60,7 +60,7 @@ const generationOptionItems: GenerationOptionItem[] = [
   {
     key: "numPredict",
     label: "Max output tokens",
-    description: "Tokens máximos de salida por respuesta.",
+    description: "Maximum output tokens per response.",
     min: 1,
     max: 32768,
     step: 256,
@@ -69,7 +69,7 @@ const generationOptionItems: GenerationOptionItem[] = [
   {
     key: "repeatPenalty",
     label: "Repeat penalty",
-    description: "Penalización contra repetición.",
+    description: "Penalty for repeating tokens.",
     min: 0.5,
     max: 2,
     step: 0.05,
@@ -167,9 +167,9 @@ export function GenerationOptionsScreen({
       borderColor="gray"
       paddingX={1}
       paddingY={1}>
-      <Text color="yellow">Parámetros de generación</Text>
+      <Text color="yellow">Generation Parameters</Text>
       <Text dimColor>
-        Ajusta cómo Ollama genera respuestas para el modelo activo.
+        Adjusts how Ollama generates responses for the active model.
       </Text>
 
       <Box marginTop={1} flexDirection="column" width="100%">
@@ -213,11 +213,11 @@ export function GenerationOptionsScreen({
         borderColor="gray"
         paddingX={1}>
         <Text>
-          Editando: <Text color="yellow">{selectedItem.label}</Text>
+          Editing: <Text color="yellow">{selectedItem.label}</Text>
         </Text>
-        <Text dimColor>↑/↓ o j/k para navegar</Text>
-        <Text dimColor>←/→ o h/l para ajustar</Text>
-        <Text dimColor>r para resetear · Esc o q para volver</Text>
+        <Text dimColor>↑/↓ or j/k for navigation</Text>
+        <Text dimColor>←/→ or h/l to adjust</Text>
+        <Text dimColor>r to reset · Esc or q to go back</Text>
       </Box>
     </Box>
   );

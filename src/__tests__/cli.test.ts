@@ -46,7 +46,7 @@ describe("CLI", () => {
     const parsed = JSON.parse(raw);
 
     expect(stderr).toBe("");
-    expect(stdout).toContain(`Configuración reiniciada: ${configFile}`);
+    expect(stdout).toContain(`Configuration reset: ${configFile}`);
     expect(parsed).toEqual(DEFAULT_OLLAMA_CONFIG);
   });
 

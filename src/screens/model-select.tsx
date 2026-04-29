@@ -69,30 +69,30 @@ export function ModelSelectScreen({
       borderColor="gray"
       paddingX={1}
       paddingY={1}>
-      <Text color="yellow">Selecciona un modelo</Text>
+      <Text color="yellow">Select a Model</Text>
 
       {isLoading ? (
         <Box marginTop={1} flexDirection="column" alignItems="center">
-          <Text>Cargando modelos desde Ollama...</Text>
-          <Text dimColor>Esc o q para volver</Text>
+          <Text>Loading models from Ollama...</Text>
+          <Text dimColor>Esc or q to go back</Text>
         </Box>
       ) : null}
 
       {!isLoading && error ? (
         <Box marginTop={1} flexDirection="column" alignItems="center">
-          <Text color="red">No se pudieron cargar los modelos</Text>
+          <Text color="red">Could not load models</Text>
           <Text dimColor>{error}</Text>
           <Text dimColor>
-            Revisa el host en /config y que Ollama esté arriba
+            Check the host in /config and ensure Ollama is running
           </Text>
-          <Text dimColor>Esc o q para volver</Text>
+          <Text dimColor>Esc or q to go back</Text>
         </Box>
       ) : null}
 
       {!isLoading && !error && models.length === 0 ? (
         <Box marginTop={1} flexDirection="column" alignItems="center">
-          <Text>No hay modelos disponibles</Text>
-          <Text dimColor>Esc o q para volver</Text>
+          <Text>No models available</Text>
+          <Text dimColor>Esc or q to go back</Text>
         </Box>
       ) : null}
 
@@ -148,14 +148,14 @@ export function ModelSelectScreen({
             borderColor="gray"
             paddingX={1}>
             <Text>
-              Enfocado:{" "}
+              Focused:{" "}
               <Text color="yellow">{models[selectedIndex]?.name ?? "-"}</Text>
             </Text>
             <Text>
-              Actual: <Text color="green">{selectedModel}</Text>
+              Current: <Text color="green">{selectedModel}</Text>
             </Text>
-            <Text dimColor>↑/↓ o j/k para navegar</Text>
-            <Text dimColor>Enter para seleccionar · Esc o q para volver</Text>
+            <Text dimColor>↑/↓ or j/k to navigate</Text>
+            <Text dimColor>Enter to select · Esc or q to go back</Text>
           </Box>
         </>
       ) : null}

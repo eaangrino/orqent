@@ -19,34 +19,34 @@ const thinkingModeItems: ThinkingModeItem[] = [
   {
     mode: "default",
     label: "Default",
-    description: "No fuerza nada. Usa el comportamiento natural del modelo.",
+    description:
+      "It doesn't force anything. Use the natural behavior of the model.",
   },
   {
     mode: "disabled",
     label: "Disabled",
-    description:
-      "Desactiva thinking cuando el modelo/API lo soporte. Más rápido.",
+    description: "Disables thinking when the model/API supports it. Faster.",
   },
   {
     mode: "enabled",
     label: "Enabled",
-    description: "Activa thinking genérico cuando el modelo/API lo soporte.",
+    description: "Enables generic thinking when the model/API supports it.",
   },
   {
     mode: "low",
     label: "Low",
     description:
-      "Razonamiento bajo. Útil para respuestas simples con algo de análisis.",
+      "Low reasoning. Fast; good for simple tasks or when you want to save tokens.",
   },
   {
     mode: "medium",
     label: "Medium",
-    description: "Razonamiento medio. Balance entre calidad y latencia.",
+    description: "Medium reasoning. Balance between quality and latency.",
   },
   {
     mode: "high",
     label: "High",
-    description: "Razonamiento alto. Más lento; úsalo para tareas difíciles.",
+    description: "High reasoning. Slower; use it for difficult tasks.",
   },
 ];
 
@@ -101,9 +101,9 @@ export function ThinkingModeScreen({
       borderColor="gray"
       paddingX={1}
       paddingY={1}>
-      <Text color="yellow">Modo de thinking / reasoning</Text>
+      <Text color="yellow">Thinking / Reasoning Mode</Text>
       <Text dimColor>
-        Controla si Orqent solicita razonamiento explícito al modelo.
+        Controls whether Orqent requests explicit reasoning from the model.
       </Text>
 
       <Box marginTop={1} flexDirection="column" width="100%">
@@ -148,10 +148,10 @@ export function ThinkingModeScreen({
         borderColor="gray"
         paddingX={1}>
         <Text>
-          Actual: <Text color="green">{thinkingMode}</Text>
+          Current: <Text color="green">{thinkingMode}</Text>
         </Text>
-        <Text dimColor>↑/↓ o j/k para navegar</Text>
-        <Text dimColor>Enter para seleccionar · Esc o q para volver</Text>
+        <Text dimColor>↑/↓ or j/k for navigation</Text>
+        <Text dimColor>Enter to select · Esc or q to go back</Text>
       </Box>
     </Box>
   );

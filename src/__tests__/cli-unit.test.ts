@@ -54,7 +54,7 @@ describe("runCli", () => {
 
     expect(resetStateImpl).toHaveBeenCalledTimes(1);
     expect(logImpl).toHaveBeenCalledTimes(1);
-    expect(logImpl.mock.calls[ 0 ]?.[ 0 ]).toContain("Configuración reiniciada:");
+    expect(logImpl.mock.calls[ 0 ]?.[ 0 ]).toContain("Configuration reset:");
     expect(runAppImpl).not.toHaveBeenCalled();
   });
 

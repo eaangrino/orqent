@@ -23,7 +23,7 @@ export function SelectableList<TItem>({
   getKey,
   isActive,
   renderItem,
-  emptyText = "No hay elementos disponibles.",
+  emptyText = "No items available",
 }: SelectableListProps<TItem>) {
   if (items.length === 0) {
     return <Text dimColor>{emptyText}</Text>;

@@ -154,30 +154,30 @@ function formatInspectChildrenFinalResponse(
           : null;
 
       return [
-        `## Hijo ${index + 1}`,
+        `## Child ${index + 1}`,
         "",
-        `- Agente: \`${String(child.agentIdentifier ?? "unknown")}\``,
+        `- Agent: \`${String(child.agentIdentifier ?? "unknown")}\``,
         `- Instance ID: \`${String(child.instanceId ?? "unknown")}\``,
         `- Task ID: \`${String(child.taskId ?? "unknown")}\``,
         `- Background Task ID: \`${String(child.backgroundTaskId ?? "none")}\``,
-        `- Estado instancia: \`${String(status.instance ?? "none")}\``,
-        `- Estado task: \`${String(status.task ?? "none")}\``,
-        `- Estado background: \`${String(status.background ?? "none")}\``,
-        `- Transcript aislado: ${transcript.length > 0 ? `sí, ${transcript.length} entrada(s)` : "no"}`,
+        `- Instance Status: \`${String(status.instance ?? "none")}\``,
+        `- Task Status: \`${String(status.task ?? "none")}\``,
+        `- Background Status: \`${String(status.background ?? "none")}\``,
+        `- Isolated Transcript: ${transcript.length > 0 ? `yes, ${transcript.length} entry(ies)` : "no"}`,
         "",
         resultText
-          ? `### Resultado persistido\n\n${resultText}`
-          : "### Resultado persistido\n\nNo hay resultado persistido.",
+          ? `### Persisted Result\n\n${resultText}`
+          : "### Persisted Result\n\nNo persisted result available.",
       ].join("\n");
     })
     .join("\n\n");
 
   return [
-    "Inspección padre-hijo completada.",
+    "Parent-child inspection completed.",
     "",
     summary,
     "",
-    childDetails || "No hay subagentes hijos para esta sesión.",
+    childDetails || "There are no child sub-agents for this session.",
   ].join("\n");
 }
 

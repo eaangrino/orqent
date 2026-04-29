@@ -89,11 +89,11 @@ export async function sendPromptToOllama({
   const normalizedPrompt = prompt.trim();
 
   if (!normalizedPrompt) {
-    throw new Error("El prompt no puede estar vacío.");
+    throw new Error("The prompt cannot be empty.");
   }
 
   if (!model.trim()) {
-    throw new Error("No hay modelo seleccionado.");
+    throw new Error("There is no model selected.");
   }
 
   const client = createOllamaClient(host);
@@ -119,11 +119,11 @@ export async function streamPromptFromOllama({
   const normalizedPrompt = prompt.trim();
 
   if (!normalizedPrompt) {
-    throw new Error("El prompt no puede estar vacío.");
+    throw new Error("The prompt cannot be empty.");
   }
 
   if (!model.trim()) {
-    throw new Error("No hay modelo seleccionado.");
+    throw new Error("There is no model selected.");
   }
 
   const client = createOllamaClient(host);
@@ -163,7 +163,7 @@ export async function streamChatFromOllama({
   onToken,
 }: StreamChatFromOllamaInput): Promise<SendPromptToOllamaResult> {
   if (!model.trim()) {
-    throw new Error("No hay modelo seleccionado.");
+    throw new Error("There is no model selected.");
   }
 
   const normalizedMessages = messages
@@ -174,7 +174,7 @@ export async function streamChatFromOllama({
     .filter((message) => message.content.length > 0);
 
   if (normalizedMessages.length === 0) {
-    throw new Error("No hay mensajes para enviar a Ollama.");
+    throw new Error("There are no messages to send to Ollama.");
   }
 
   const client = createOllamaClient(host);
@@ -217,7 +217,7 @@ export async function compactChatHistoryWithOllama({
   generationOptions,
 }: CompactChatHistoryInput): Promise<string> {
   if (!model.trim()) {
-    throw new Error("No hay modelo seleccionado.");
+    throw new Error("There is no model selected.");
   }
 
   const compactableMessages = messages
