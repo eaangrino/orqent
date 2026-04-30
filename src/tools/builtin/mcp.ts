@@ -2,6 +2,7 @@ import {
   deleteMcpServer,
   listMcpServers,
   upsertMcpServer,
+  callConfiguredMcpServerTool,
   type McpServerConfig,
   type McpServerConfigInput,
   type McpServerTransport,
@@ -51,6 +52,12 @@ type McpServerSafeView = {
   timeoutMs: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type McpCallToolInput = {
+  serverName: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -245,6 +252,63 @@ function validateDeleteServerInput(
   };
 }
 
+function normalizeMcpCallToolInput(input: unknown):
+  | {
+    ok: true;
+    input: McpCallToolInput;
+  }
+  | {
+    ok: false;
+    error: string;
+  } {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "input must be an object.",
+    };
+  }
+
+  const serverName =
+    typeof input.serverName === "string" ? input.serverName.trim() : "";
+  const toolName =
+    typeof input.toolName === "string" ? input.toolName.trim() : "";
+
+  if (!serverName) {
+    return {
+      ok: false,
+      error: "serverName must be a non-empty string.",
+    };
+  }
+
+  if (!toolName) {
+    return {
+      ok: false,
+      error: "toolName must be a non-empty string.",
+    };
+  }
+
+  if (
+    input.arguments !== undefined &&
+    (!isRecord(input.arguments) || Array.isArray(input.arguments))
+  ) {
+    return {
+      ok: false,
+      error: "arguments must be an object when provided.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      serverName,
+      toolName,
+      arguments: isRecord(input.arguments) ? input.arguments : {},
+    },
+  };
+}
+
+// Export tools
+
 export const mcpListServersTool: ToolDefinition<
   McpListServersInput,
   McpListServersResult
@@ -408,5 +472,56 @@ export const mcpDeleteServerTool: ToolDefinition<
           : "MCP server configuration was not found.",
       },
     };
+  },
+};
+
+export const mcpCallToolTool: ToolDefinition<McpCallToolInput> = {
+  name: "mcp.call_tool",
+  description:
+    "Execute a real tool exposed by a configured MCP server. Use only when the user explicitly asks to use an MCP server/tool or when MCP execution is required.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      serverName: {
+        type: "string",
+        description: "Configured MCP server name, for example everything or postgres_local.",
+      },
+      toolName: {
+        type: "string",
+        description: "Tool name exposed by the MCP server, for example echo or execute_sql.",
+      },
+      arguments: {
+        type: "object",
+        description: "Arguments object passed to the MCP tool.",
+      },
+    },
+    required: [ "serverName", "toolName" ],
+    additionalProperties: false,
+  },
+  risk: "high",
+  permissions: [ "mcp:write" ],
+  requiresConfirmation: true,
+  isReadOnly: false,
+  validateInput: normalizeMcpCallToolInput,
+  async execute(input) {
+    try {
+      const result = await callConfiguredMcpServerTool(input);
+
+      return {
+        ok: true,
+        result,
+      };
+    } catch (error_) {
+      return {
+        ok: false,
+        error: {
+          code: "mcp_tool_execution_failed",
+          message:
+            error_ instanceof Error
+              ? error_.message
+              : "Unknown MCP tool execution error.",
+        },
+      };
+    }
   },
 };

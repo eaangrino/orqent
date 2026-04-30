@@ -17,6 +17,7 @@ import {
   agentSpawnTool,
 } from "./builtin/agents.js";
 import {
+  mcpCallToolTool,
   mcpDeleteServerTool,
   mcpListServersTool,
   mcpUpsertServerTool,
@@ -96,6 +97,7 @@ export const builtinTools: AnyToolDefinition[] = [
   mcpListServersTool,
   mcpUpsertServerTool,
   mcpDeleteServerTool,
+  mcpCallToolTool,
 ];
 
 export const defaultToolRegistry = createToolRegistry(builtinTools);

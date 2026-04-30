@@ -10,6 +10,7 @@ import {
   listConfiguredMcpServerTools,
   listConfiguredMcpServerResources,
   listConfiguredMcpServerPrompts,
+  callConfiguredMcpServerTool,
   type McpClientLike,
   type McpSdkAdapter,
   type McpServerConfig,
@@ -50,6 +51,14 @@ function createFakeSdk() {
     }),
     listPrompts: vi.fn().mockResolvedValue({
       prompts: [],
+    }),
+    callTool: vi.fn().mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: "ok",
+        },
+      ],
     }),
   };
 
@@ -96,6 +105,62 @@ afterEach(async () => {
 });
 
 describe("mcp client", () => {
+  it("callConfiguredMcpServerTool ejecuta una tool MCP real por adapter", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "everything",
+      transport: "stdio",
+      command: "npx",
+      args: [ "-y", "@modelcontextprotocol/server-everything" ],
+      timeoutMs: 30_000,
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.callTool!).mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: "hello",
+        },
+      ],
+    });
+
+    const result = await callConfiguredMcpServerTool({
+      serverName: "everything",
+      toolName: "echo",
+      arguments: {
+        message: "hello",
+      },
+      sdk,
+    });
+
+    expect(result).toEqual({
+      serverName: "everything",
+      toolName: "echo",
+      arguments: {
+        message: "hello",
+      },
+      response: {
+        content: [
+          {
+            type: "text",
+            text: "hello",
+          },
+        ],
+      },
+    });
+
+    expect(client.callTool).toHaveBeenCalledWith({
+      name: "echo",
+      arguments: {
+        message: "hello",
+      },
+    });
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
   it("listConfiguredMcpServerPrompts descubre prompts de un servidor persistido", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;

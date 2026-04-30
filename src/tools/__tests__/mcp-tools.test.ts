@@ -9,6 +9,7 @@ import {
   type ToolExecutionResult,
 } from "../index.js";
 import {
+  mcpCallToolTool,
   mcpDeleteServerTool,
   mcpListServersTool,
   mcpUpsertServerTool,
@@ -31,6 +32,7 @@ function createRegistry() {
     mcpListServersTool,
     mcpUpsertServerTool,
     mcpDeleteServerTool,
+    mcpCallToolTool,
   ]);
 }
 
@@ -47,6 +49,26 @@ afterEach(async () => {
 });
 
 describe("mcp tools", () => {
+  it("mcp.call_tool rechaza input inválido", async () => {
+    const result = await executeTool({
+      registry: createRegistry(),
+      toolName: "mcp.call_tool",
+      input: {
+        serverName: "",
+        toolName: "echo",
+      },
+      sessionId: "session-test",
+      permissionPolicy: createDefaultPermissionPolicy("allow"),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (!result.ok) {
+      expect(result.error.code).toBe("invalid_tool_input");
+      expect(result.error.message).toBe("serverName must be a non-empty string.");
+    }
+  });
+
   it("mcp.list_servers devuelve lista vacía inicialmente", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-tools-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;

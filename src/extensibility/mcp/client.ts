@@ -16,12 +16,24 @@ export type McpListPromptsResponseLike = {
   nextCursor?: string;
 };
 
+export type McpCallToolResponseLike = {
+  content?: unknown[];
+  structuredContent?: unknown;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+  [ key: string ]: unknown;
+};
+
 export type McpClientLike = {
   connect: (transport: unknown) => Promise<void>;
   close?: () => Promise<void>;
   listTools?: (params?: { cursor?: string }) => Promise<McpListToolsResponseLike>;
   listResources?: (params?: { cursor?: string }) => Promise<McpListResourcesResponseLike>;
   listPrompts?: (params?: { cursor?: string }) => Promise<McpListPromptsResponseLike>;
+  callTool?: (params: {
+    name: string;
+    arguments?: Record<string, unknown>;
+  }) => Promise<McpCallToolResponseLike>;
 };
 
 export type McpTransportLike = {
@@ -67,6 +79,20 @@ export type McpDiscoveredPrompt = {
 export type ListConfiguredMcpServerPromptsInput = {
   name: string;
   sdk?: McpSdkAdapter;
+};
+
+export type CallConfiguredMcpServerToolInput = {
+  serverName: string;
+  toolName: string;
+  arguments?: Record<string, unknown>;
+  sdk?: McpSdkAdapter;
+};
+
+export type McpToolCallResult = {
+  serverName: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  response: McpCallToolResponseLike;
 };
 
 export type ListConfiguredMcpServerResourcesInput = {
@@ -249,6 +275,14 @@ export async function createDefaultMcpSdkAdapter(): Promise<McpSdkAdapter> {
           return client.listPrompts(
             params as Parameters<typeof client.listPrompts>[ 0 ],
           ) as Promise<McpListPromptsResponseLike>;
+        },
+        callTool(params: {
+          name: string;
+          arguments?: Record<string, unknown>;
+        }) {
+          return client.callTool(
+            params as Parameters<typeof client.callTool>[ 0 ],
+          ) as Promise<McpCallToolResponseLike>;
         },
       };
     },
@@ -498,6 +532,42 @@ export async function listConfiguredMcpServerPrompts({
     }
 
     return prompts.sort((left, right) => left.name.localeCompare(right.name));
+  } finally {
+    await connected.close();
+  }
+}
+
+export async function callConfiguredMcpServerTool({
+  serverName,
+  toolName,
+  arguments: toolArguments = {},
+  sdk,
+}: CallConfiguredMcpServerToolInput): Promise<McpToolCallResult> {
+  const connected = await connectConfiguredMcpServer({
+    name: serverName,
+    sdk,
+  });
+
+  try {
+    if (!connected.client.callTool) {
+      throw new Error("MCP client adapter does not support callTool.");
+    }
+
+    const response = await withTimeout({
+      promise: connected.client.callTool({
+        name: toolName,
+        arguments: toolArguments,
+      }),
+      timeoutMs: connected.server.timeoutMs,
+      label: `MCP server "${connected.server.name}" tool execution`,
+    });
+
+    return {
+      serverName: connected.server.name,
+      toolName,
+      arguments: toolArguments,
+      response,
+    };
   } finally {
     await connected.close();
   }
