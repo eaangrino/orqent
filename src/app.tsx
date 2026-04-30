@@ -897,7 +897,7 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
 
     <Layout
       topLeftText="Powered by eaangrino"
-      topRightText={`vista: ${activeView}`}
+      topRightText={``}
       footerLineA={footerLineA}
       footerLineB={`${footerLineB} · ${ollamaConnectionLabel}`}
       footerLineBRightText={footerLineBRightText}

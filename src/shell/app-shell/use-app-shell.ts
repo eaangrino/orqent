@@ -1,4 +1,6 @@
 import { realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, relative, sep } from "node:path";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadOllamaConfig, saveOllamaConfig } from "../../models/ollama/storage.js";
 import {
@@ -24,6 +26,45 @@ function resolveLaunchCwd() {
 }
 
 const launchCwd = resolveLaunchCwd();
+
+function formatOllamaHostLabel(host: string) {
+  try {
+    const url = new URL(normalizeOllamaHost(host));
+    const hostname = url.hostname.toLowerCase();
+
+    if (hostname === "ollama.com") {
+      return "Cloud";
+    }
+
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1"
+    ) {
+      return "Local";
+    }
+
+    return "Custom";
+  } catch {
+    return "Custom";
+  }
+}
+
+function formatPathForFooter(path: string) {
+  const homePath = homedir().normalize("NFC");
+  const normalizedPath = path.normalize("NFC");
+  const relativePath = relative(homePath, normalizedPath);
+
+  if (!relativePath) {
+    return "~";
+  }
+
+  if (!relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return `~/${relativePath.split(sep).join("/")}`;
+  }
+
+  return normalizedPath;
+}
 
 function formatThinkingModeLabel(mode: string) {
   switch (mode) {
@@ -213,11 +254,11 @@ export function useAppShell() {
   }, [ selectedModel, thinkingMode, permissionMode ]);
 
   const footerLineB = useMemo(() => {
-    return `Ollama Host: ${ollamaHost}`;
+    return `Ollama Host: ${formatOllamaHostLabel(ollamaHost)}`;
   }, [ ollamaHost ]);
 
   const footerLineBRightText = useMemo(() => {
-    return `Ruta: ${launchCwd}`;
+    return `${formatPathForFooter(launchCwd)}`;
   }, []);
 
   const permissionPolicy = useMemo(
