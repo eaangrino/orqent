@@ -12,11 +12,14 @@ type LayoutProps = {
 };
 
 const logoLines = [
-  "  ____   ____   ___  _____ _   _ _____",
-  " / __ \\ |  _ \\ / _ \\| ____| \\ | |_   _|",
-  "| |  | || |_) | | | |  _| |  \\| | | |",
-  "| |__| ||  _ <| |_| | |___| |\\  | | |",
-  " \\____/ |_| \\_\\\\__\\_\\_____|_| \\_| |_|",
+  " .88888.                                        dP   ",
+  "d8'   `8b                                       88   ",
+  "88     88 88d888b. .d8888b. .d8888b. 88d888b. d8888P ",
+  "88     88 88'  `88 88'  `88 88ooood8 88'  `88   88   ",
+  "Y8.   .8P 88       88.  .88 88.  ... 88    88   88   ",
+  " `8888P'  dP       `8888P88 `88888P' dP    dP   dP   ",
+  "                         88                          ",
+  "                         dP                          ",
 ];
 
 export function Layout({
@@ -43,10 +46,6 @@ export function Layout({
         alignItems="center">
         {!hideBrand ? (
           <>
-            <Text color="#FF8549" bold>
-              O R Q E N T
-            </Text>
-
             {logoLines.map((line) => (
               <Text key={line} color="#FF8549">
                 {line}
