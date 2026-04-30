@@ -7,6 +7,7 @@ import {
 import { DEFAULT_OLLAMA_CONFIG } from "./models/ollama/config.js";
 import {
   listConfiguredMcpServerTools,
+  listConfiguredMcpServerResources,
   connectConfiguredMcpServer,
   deleteMcpServer,
   listMcpServers,
@@ -25,6 +26,7 @@ const helpText = `
     $ orqent mcp remove <name>
     $ orqent mcp ping <name> [--json]
     $ orqent mcp tools <name> [--json]
+    $ orqent mcp resources <name> [--json]
     
   Options
     --help              Show help
@@ -43,7 +45,6 @@ const helpText = `
     --scope             Scope: project or global
     --disabled          Persist server as disabled
     --json              Print JSON output
-    --ping              Connect to the MCP server to verify connectivity and print latency
 
   Examples
     $ orqent
@@ -54,6 +55,8 @@ const helpText = `
     $ orqent mcp add postgres_local --transport streamable_http --url http://127.0.0.1:6060/mcp --timeout-ms 20000 --header "Accept=application/json, text/event-stream"
     $ orqent mcp remove postgres_local
     $ orqent mcp ping postgres_local
+    $ orqent mcp tools postgres_local
+    $ orqent mcp resources postgres_local
 `;
 
 type RunAppOptions = {
@@ -225,6 +228,9 @@ async function handleMcpCommand({
         "  orqent mcp list [--include-disabled] [--json]",
         "  orqent mcp add <name> --transport <stdio|sse|streamable_http> [--command <cmd>] [--arg <value>] [--url <url>] [--header key=value] [--env key=value] [--timeout-ms <ms>] [--scope <project|global>] [--disabled] [--json]",
         "  orqent mcp remove <name> [--json]",
+        "  orqent mcp ping <name> [--json]",
+        "  orqent mcp tools <name> [--json]",
+        "  orqent mcp resources <name> [--json]",
       ].join("\n"),
     );
     return true;
@@ -501,6 +507,83 @@ async function handleMcpCommand({
       }
 
       logImpl(`MCP tools discovery failed: ${serverName}\n${message}`);
+    }
+
+    return true;
+  }
+
+  if (subcommand === "resources" || subcommand === "list-resources") {
+    const serverName = normalizeString(name);
+
+    if (!serverName) {
+      logImpl("Using: orqent mcp resources <name>");
+      return true;
+    }
+
+    try {
+      const resources = await listConfiguredMcpServerResources({
+        name: serverName,
+      });
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              server: serverName,
+              count: resources.length,
+              resources,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      if (resources.length === 0) {
+        logImpl(`No MCP resources discovered for server: ${serverName}`);
+        return true;
+      }
+
+      logImpl(
+        [
+          `MCP resources discovered for server: ${serverName}`,
+          ...resources.map((resource) =>
+            [
+              `- ${resource.uri}`,
+              resource.name ? `  name=${resource.name}` : null,
+              resource.description ? `  ${resource.description}` : null,
+              resource.mimeType ? `  mimeType=${resource.mimeType}` : null,
+            ]
+              .filter((line): line is string => line !== null)
+              .join("\n"),
+          ),
+          "",
+          "Note: MCP resource reading is not wired yet.",
+        ].join("\n"),
+      );
+    } catch (error_) {
+      const message =
+        error_ instanceof Error
+          ? error_.message
+          : "Unknown MCP resources discovery error.";
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              ok: false,
+              server: serverName,
+              error: message,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      logImpl(`MCP resources discovery failed: ${serverName}\n${message}`);
     }
 
     return true;

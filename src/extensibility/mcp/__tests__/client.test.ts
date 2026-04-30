@@ -8,6 +8,7 @@ import {
   connectConfiguredMcpServer,
   upsertMcpServer,
   listConfiguredMcpServerTools,
+  listConfiguredMcpServerResources,
   type McpClientLike,
   type McpSdkAdapter,
   type McpServerConfig,
@@ -42,6 +43,9 @@ function createFakeSdk() {
     close: vi.fn().mockResolvedValue(undefined),
     listTools: vi.fn().mockResolvedValue({
       tools: [],
+    }),
+    listResources: vi.fn().mockResolvedValue({
+      resources: [],
     }),
   };
 
@@ -153,6 +157,118 @@ describe("mcp client", () => {
       cursor: undefined,
     });
     expect(client.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("listConfiguredMcpServerResources descubre resources de un servidor persistido", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "postgres_local",
+      transport: "streamable_http",
+      url: "http://127.0.0.1:6060/mcp",
+      headers: {
+        Accept: "application/json, text/event-stream",
+      },
+      timeoutMs: 30_000,
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.listResources!).mockResolvedValue({
+      resources: [
+        {
+          name: "database schema",
+          uri: "postgres://schema/public",
+          description: "Public schema metadata.",
+          mimeType: "application/json",
+        },
+        {
+          uri: "postgres://stats/top-queries",
+        },
+      ],
+    });
+
+    const resources = await listConfiguredMcpServerResources({
+      name: "postgres_local",
+      sdk,
+    });
+
+    expect(resources).toEqual([
+      {
+        name: "database schema",
+        uri: "postgres://schema/public",
+        description: "Public schema metadata.",
+        mimeType: "application/json",
+        raw: {
+          name: "database schema",
+          uri: "postgres://schema/public",
+          description: "Public schema metadata.",
+          mimeType: "application/json",
+        },
+      },
+      {
+        name: null,
+        uri: "postgres://stats/top-queries",
+        description: null,
+        mimeType: null,
+        raw: {
+          uri: "postgres://stats/top-queries",
+        },
+      },
+    ]);
+
+    expect(client.listResources).toHaveBeenCalledWith({
+      cursor: undefined,
+    });
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("listConfiguredMcpServerResources soporta paginación", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "paged_resources",
+      transport: "streamable_http",
+      url: "http://127.0.0.1:6060/mcp",
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.listResources!)
+      .mockResolvedValueOnce({
+        resources: [
+          {
+            uri: "resource://b",
+          },
+        ],
+        nextCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        resources: [
+          {
+            uri: "resource://a",
+          },
+        ],
+      });
+
+    const resources = await listConfiguredMcpServerResources({
+      name: "paged_resources",
+      sdk,
+    });
+
+    expect(resources.map((resource) => resource.uri)).toEqual([
+      "resource://a",
+      "resource://b",
+    ]);
+
+    expect(client.listResources).toHaveBeenNthCalledWith(1, {
+      cursor: undefined,
+    });
+    expect(client.listResources).toHaveBeenNthCalledWith(2, {
+      cursor: "page-2",
+    });
   });
 
   it("listConfiguredMcpServerTools soporta paginación", async () => {
