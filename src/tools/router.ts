@@ -189,28 +189,77 @@ type ToolPermissionDecision = {
   confirmation: ToolConfirmationOutcome;
 };
 
-function sanitizeToolInput(input: unknown): unknown {
+const REDACTED_SECRET_VALUE = "[redacted secret]";
+
+const sensitiveKeyPatterns = [
+  /authorization/i,
+  /api[-_]?key/i,
+  /access[-_]?token/i,
+  /refresh[-_]?token/i,
+  /token/i,
+  /secret/i,
+  /password/i,
+  /passwd/i,
+  /pwd/i,
+  /credential/i,
+  /database[-_]?uri/i,
+  /database[-_]?url/i,
+  /db[-_]?uri/i,
+  /db[-_]?url/i,
+  /connection[-_]?string/i,
+  /postgres.*uri/i,
+  /postgres.*url/i,
+  /x-database-uri/i,
+];
+
+function isSensitiveKey(key: string): boolean {
+  return sensitiveKeyPatterns.some((pattern) => pattern.test(key));
+}
+
+function redactStringBytes(value: string): string {
+  return `[redacted ${Buffer.byteLength(value, "utf8")} bytes]`;
+}
+
+function sanitizeToolInputValue(value: unknown, key = ""): unknown {
+  if (typeof value === "string") {
+    if (key === "content" || key === "stdin") {
+      return redactStringBytes(value);
+    }
+
+    if (isSensitiveKey(key)) {
+      return REDACTED_SECRET_VALUE;
+    }
+
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeToolInputValue(item, key));
+  }
+
   if (
-    typeof input !== "object" ||
-    input === null ||
-    Array.isArray(input)
+    typeof value !== "object" ||
+    value === null
   ) {
-    return input;
+    return value;
   }
 
-  const copy: Record<string, unknown> = {
-    ...(input as Record<string, unknown>),
-  };
+  const sanitized: Record<string, unknown> = {};
 
-  if (typeof copy.content === "string") {
-    copy.content = `[redacted ${Buffer.byteLength(copy.content, "utf8")} bytes]`;
+  for (const [ childKey, childValue ] of Object.entries(value)) {
+    if (isSensitiveKey(childKey)) {
+      sanitized[ childKey ] = REDACTED_SECRET_VALUE;
+      continue;
+    }
+
+    sanitized[ childKey ] = sanitizeToolInputValue(childValue, childKey);
   }
 
-  if (typeof copy.stdin === "string") {
-    copy.stdin = `[redacted ${Buffer.byteLength(copy.stdin, "utf8")} bytes]`;
-  }
+  return sanitized;
+}
 
-  return copy;
+function sanitizeToolInput(input: unknown): unknown {
+  return sanitizeToolInputValue(input);
 }
 
 function getResultError(result: ToolExecutionResult): {

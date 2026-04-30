@@ -491,6 +491,16 @@ describe("executeTool", () => {
         value: "audit-redacted",
         content: "secret-content",
         stdin: "secret-stdin",
+        headers: {
+          Authorization: "Bearer should-not-leak",
+          Accept: "application/json",
+          "x-database-uri": "postgresql://postgres:admin@localhost:5432/db",
+        },
+        env: {
+          NODE_ENV: "test",
+          SECRET_TOKEN: "should-not-leak",
+          DATABASE_URL: "postgresql://postgres:admin@localhost:5432/db",
+        },
       },
       sessionId: "session-test",
       toolActionLogger,
@@ -499,10 +509,26 @@ describe("executeTool", () => {
     expect(toolActionLogger).toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({
+          value: "audit-redacted",
           content: "[redacted 14 bytes]",
           stdin: "[redacted 12 bytes]",
+          headers: {
+            Authorization: "[redacted secret]",
+            Accept: "application/json",
+            "x-database-uri": "[redacted secret]",
+          },
+          env: {
+            NODE_ENV: "test",
+            SECRET_TOKEN: "[redacted secret]",
+            DATABASE_URL: "[redacted secret]",
+          },
         }),
       }),
     );
+
+    const loggedInput = toolActionLogger.mock.calls[ 0 ]?.[ 0 ].input;
+
+    expect(JSON.stringify(loggedInput)).not.toContain("should-not-leak");
+    expect(JSON.stringify(loggedInput)).not.toContain("postgres:admin");
   });
 });
