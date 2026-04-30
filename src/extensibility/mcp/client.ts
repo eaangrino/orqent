@@ -1,9 +1,15 @@
 import type { McpServerConfig } from "./types.js";
 import { readMcpServer } from "./storage.js";
 
+export type McpListToolsResponseLike = {
+  tools?: unknown[];
+  nextCursor?: string;
+};
+
 export type McpClientLike = {
   connect: (transport: unknown) => Promise<void>;
   close?: () => Promise<void>;
+  listTools?: (params?: { cursor?: string }) => Promise<McpListToolsResponseLike>;
 };
 
 export type McpTransportLike = {
@@ -23,6 +29,38 @@ export type ConnectedMcpServer = {
   transport: McpTransportLike;
   close: () => Promise<void>;
 };
+
+export type McpDiscoveredTool = {
+  name: string;
+  description: string | null;
+  inputSchema: unknown | null;
+  raw: unknown;
+};
+
+export type ListConfiguredMcpServerToolsInput = {
+  name: string;
+  sdk?: McpSdkAdapter;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeMcpTool(value: unknown): McpDiscoveredTool | null {
+  if (!isRecord(value) || typeof value.name !== "string" || !value.name.trim()) {
+    return null;
+  }
+
+  return {
+    name: value.name.trim(),
+    description:
+      typeof value.description === "string" && value.description.trim()
+        ? value.description.trim()
+        : null,
+    inputSchema: value.inputSchema ?? null,
+    raw: value,
+  };
+}
 
 export type ConnectConfiguredMcpServerInput = {
   name: string;
@@ -121,6 +159,11 @@ export async function createDefaultMcpSdkAdapter(): Promise<McpSdkAdapter> {
         close() {
           return client.close();
         },
+        listTools(params?: { cursor?: string }) {
+          return client.listTools(
+            params as Parameters<typeof client.listTools>[ 0 ],
+          ) as Promise<McpListToolsResponseLike>;
+        },
       };
     },
 
@@ -203,4 +246,60 @@ export async function connectMcpServer({
       await transport.close?.();
     },
   };
+}
+
+export async function listConfiguredMcpServerTools({
+  name,
+  sdk,
+}: ListConfiguredMcpServerToolsInput): Promise<McpDiscoveredTool[]> {
+  const connected = await connectConfiguredMcpServer({
+    name,
+    sdk,
+  });
+
+  try {
+    if (!connected.client.listTools) {
+      throw new Error("MCP client adapter does not support listTools.");
+    }
+
+    const tools: McpDiscoveredTool[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+
+    for (let page = 0; page < 50; page++) {
+      const response = await withTimeout({
+        promise: connected.client.listTools({ cursor }),
+        timeoutMs: connected.server.timeoutMs,
+        label: `MCP server "${connected.server.name}" tool discovery`,
+      });
+
+      tools.push(
+        ...(response.tools ?? [])
+          .map(normalizeMcpTool)
+          .filter((tool): tool is McpDiscoveredTool => tool !== null),
+      );
+
+      const nextCursor =
+        typeof response.nextCursor === "string" && response.nextCursor.trim()
+          ? response.nextCursor.trim()
+          : undefined;
+
+      if (!nextCursor) {
+        break;
+      }
+
+      if (seenCursors.has(nextCursor)) {
+        throw new Error(
+          `MCP server "${connected.server.name}" returned a repeated tools cursor.`,
+        );
+      }
+
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+
+    return tools.sort((left, right) => left.name.localeCompare(right.name));
+  } finally {
+    await connected.close();
+  }
 }

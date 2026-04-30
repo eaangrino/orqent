@@ -6,6 +6,7 @@ import {
 } from "./models/ollama/storage.js";
 import { DEFAULT_OLLAMA_CONFIG } from "./models/ollama/config.js";
 import {
+  listConfiguredMcpServerTools,
   connectConfiguredMcpServer,
   deleteMcpServer,
   listMcpServers,
@@ -23,7 +24,8 @@ const helpText = `
     $ orqent mcp add <name> --transport <stdio|sse|streamable_http> [options]
     $ orqent mcp remove <name>
     $ orqent mcp ping <name> [--json]
-
+    $ orqent mcp tools <name> [--json]
+    
   Options
     --help              Show help
     --version           Show version
@@ -41,6 +43,7 @@ const helpText = `
     --scope             Scope: project or global
     --disabled          Persist server as disabled
     --json              Print JSON output
+    --ping              Connect to the MCP server to verify connectivity and print latency
 
   Examples
     $ orqent
@@ -50,6 +53,7 @@ const helpText = `
     $ orqent mcp add filesystem --transport stdio --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg .
     $ orqent mcp add postgres_local --transport streamable_http --url http://127.0.0.1:6060/mcp --timeout-ms 20000 --header "Accept=application/json, text/event-stream"
     $ orqent mcp remove postgres_local
+    $ orqent mcp ping postgres_local
 `;
 
 type RunAppOptions = {
@@ -419,6 +423,84 @@ async function handleMcpCommand({
       }
 
       logImpl(`MCP server connection failed: ${serverName}\n${message}`);
+    }
+
+    return true;
+  }
+
+  if (subcommand === "tools" || subcommand === "list-tools") {
+    const serverName = normalizeString(name);
+
+    if (!serverName) {
+      logImpl("Using: orqent mcp tools <name>");
+      return true;
+    }
+
+    try {
+      const tools = await listConfiguredMcpServerTools({
+        name: serverName,
+      });
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              server: serverName,
+              count: tools.length,
+              tools,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      if (tools.length === 0) {
+        logImpl(`No MCP tools discovered for server: ${serverName}`);
+        return true;
+      }
+
+      logImpl(
+        [
+          `MCP tools discovered for server: ${serverName}`,
+          ...tools.map((tool) =>
+            [
+              `- ${tool.name}`,
+              tool.description ? `  ${tool.description}` : null,
+              tool.inputSchema
+                ? `  inputSchema=${JSON.stringify(tool.inputSchema)}`
+                : null,
+            ]
+              .filter((line): line is string => line !== null)
+              .join("\n"),
+          ),
+          "",
+          "Note: MCP tool execution is not wired yet.",
+        ].join("\n"),
+      );
+    } catch (error_) {
+      const message =
+        error_ instanceof Error
+          ? error_.message
+          : "Unknown MCP tools discovery error.";
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              ok: false,
+              server: serverName,
+              error: message,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      logImpl(`MCP tools discovery failed: ${serverName}\n${message}`);
     }
 
     return true;

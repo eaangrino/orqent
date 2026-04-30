@@ -7,6 +7,7 @@ import {
   createMcpTransport,
   connectConfiguredMcpServer,
   upsertMcpServer,
+  listConfiguredMcpServerTools,
   type McpClientLike,
   type McpSdkAdapter,
   type McpServerConfig,
@@ -39,6 +40,9 @@ function createFakeSdk() {
   const client: McpClientLike = {
     connect: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
+    listTools: vi.fn().mockResolvedValue({
+      tools: [],
+    }),
   };
 
   const stdioTransport: McpTransportLike = {
@@ -84,6 +88,120 @@ afterEach(async () => {
 });
 
 describe("mcp client", () => {
+  it("listConfiguredMcpServerTools descubre tools de un servidor persistido", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "postgres_local",
+      transport: "streamable_http",
+      url: "http://127.0.0.1:6060/mcp",
+      headers: {
+        Accept: "application/json, text/event-stream",
+      },
+      timeoutMs: 30_000,
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.listTools!).mockResolvedValue({
+      tools: [
+        {
+          name: "query",
+          description: "Run a read-only query.",
+          inputSchema: {
+            type: "object",
+          },
+        },
+        {
+          name: "schema",
+        },
+      ],
+    });
+
+    const tools = await listConfiguredMcpServerTools({
+      name: "postgres_local",
+      sdk,
+    });
+
+    expect(tools).toEqual([
+      {
+        name: "query",
+        description: "Run a read-only query.",
+        inputSchema: {
+          type: "object",
+        },
+        raw: {
+          name: "query",
+          description: "Run a read-only query.",
+          inputSchema: {
+            type: "object",
+          },
+        },
+      },
+      {
+        name: "schema",
+        description: null,
+        inputSchema: null,
+        raw: {
+          name: "schema",
+        },
+      },
+    ]);
+
+    expect(client.listTools).toHaveBeenCalledWith({
+      cursor: undefined,
+    });
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("listConfiguredMcpServerTools soporta paginación", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "paged",
+      transport: "streamable_http",
+      url: "http://127.0.0.1:6060/mcp",
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.listTools!)
+      .mockResolvedValueOnce({
+        tools: [
+          {
+            name: "b_tool",
+          },
+        ],
+        nextCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        tools: [
+          {
+            name: "a_tool",
+          },
+        ],
+      });
+
+    const tools = await listConfiguredMcpServerTools({
+      name: "paged",
+      sdk,
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "a_tool",
+      "b_tool",
+    ]);
+
+    expect(client.listTools).toHaveBeenNthCalledWith(1, {
+      cursor: undefined,
+    });
+    expect(client.listTools).toHaveBeenNthCalledWith(2, {
+      cursor: "page-2",
+    });
+  });
+
   it("connectConfiguredMcpServer conecta un servidor persistido por nombre", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;
