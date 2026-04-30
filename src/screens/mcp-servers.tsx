@@ -1,5 +1,4 @@
 import { Box, Text, useInput } from "ink";
-import TextInput from "ink-text-input";
 import { MultilineTextInput } from "../components/multiline-text-input.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
