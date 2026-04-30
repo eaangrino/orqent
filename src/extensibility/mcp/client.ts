@@ -1,4 +1,5 @@
 import type { McpServerConfig } from "./types.js";
+import { readMcpServer } from "./storage.js";
 
 export type McpClientLike = {
   connect: (transport: unknown) => Promise<void>;
@@ -22,6 +23,27 @@ export type ConnectedMcpServer = {
   transport: McpTransportLike;
   close: () => Promise<void>;
 };
+
+export type ConnectConfiguredMcpServerInput = {
+  name: string;
+  sdk?: McpSdkAdapter;
+};
+
+export async function connectConfiguredMcpServer({
+  name,
+  sdk,
+}: ConnectConfiguredMcpServerInput): Promise<ConnectedMcpServer> {
+  const server = await readMcpServer(name);
+
+  if (!server) {
+    throw new Error(`MCP server "${name}" was not found.`);
+  }
+
+  return connectMcpServer({
+    server,
+    sdk,
+  });
+}
 
 function assertConnectableServer(server: McpServerConfig): void {
   if (!server.enabled) {

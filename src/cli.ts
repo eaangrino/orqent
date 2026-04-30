@@ -6,6 +6,7 @@ import {
 } from "./models/ollama/storage.js";
 import { DEFAULT_OLLAMA_CONFIG } from "./models/ollama/config.js";
 import {
+  connectConfiguredMcpServer,
   deleteMcpServer,
   listMcpServers,
   upsertMcpServer,
@@ -21,6 +22,7 @@ const helpText = `
     $ orqent mcp list
     $ orqent mcp add <name> --transport <stdio|sse|streamable_http> [options]
     $ orqent mcp remove <name>
+    $ orqent mcp ping <name> [--json]
 
   Options
     --help              Show help
@@ -348,6 +350,77 @@ async function handleMcpCommand({
         ? `MCP server deleted: ${serverName}`
         : `MCP server not found: ${serverName}`,
     );
+    return true;
+  }
+
+  if (subcommand === "ping" || subcommand === "connect") {
+    const serverName = normalizeString(name);
+
+    if (!serverName) {
+      logImpl("Using: orqent mcp ping <name>");
+      return true;
+    }
+
+    const startedAt = Date.now();
+
+    try {
+      const connected = await connectConfiguredMcpServer({
+        name: serverName,
+      });
+
+      await connected.close();
+
+      const latencyMs = Date.now() - startedAt;
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              ok: true,
+              name: connected.server.name,
+              transport: connected.server.transport,
+              latencyMs,
+              message: "MCP server connected successfully.",
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      logImpl(
+        [
+          `MCP server connected: ${connected.server.name}`,
+          `transport=${connected.server.transport}`,
+          `latencyMs=${latencyMs}`,
+          "Note: discovery and tool execution are not wired yet.",
+        ].join("\n"),
+      );
+    } catch (error_) {
+      const message =
+        error_ instanceof Error
+          ? error_.message
+          : "Unknown MCP connection error.";
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              ok: false,
+              name: serverName,
+              error: message,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      logImpl(`MCP server connection failed: ${serverName}\n${message}`);
+    }
+
     return true;
   }
 

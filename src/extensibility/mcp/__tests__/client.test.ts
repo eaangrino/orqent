@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   connectMcpServer,
   createMcpTransport,
+  connectConfiguredMcpServer,
+  upsertMcpServer,
   type McpClientLike,
   type McpSdkAdapter,
   type McpServerConfig,
@@ -64,7 +69,71 @@ function createFakeSdk() {
   };
 }
 
+let tempDir = "";
+
+afterEach(async () => {
+  if (tempDir) {
+    await rm(tempDir, {
+      recursive: true,
+      force: true,
+    });
+    tempDir = "";
+  }
+
+  delete process.env.ORQENT_DATA_DIR;
+});
+
 describe("mcp client", () => {
+  it("connectConfiguredMcpServer conecta un servidor persistido por nombre", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "postgres_local",
+      transport: "streamable_http",
+      url: "http://127.0.0.1:6060/mcp",
+      headers: {
+        Accept: "application/json, text/event-stream",
+      },
+      timeoutMs: 30_000,
+    });
+
+    const {
+      sdk,
+      client,
+      streamableHttpTransport,
+    } = createFakeSdk();
+
+    const connected = await connectConfiguredMcpServer({
+      name: "postgres_local",
+      sdk,
+    });
+
+    expect(connected.server.name).toBe("postgres_local");
+    expect(sdk.createStreamableHttpTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "postgres_local",
+        transport: "streamable_http",
+        url: "http://127.0.0.1:6060/mcp",
+      }),
+    );
+    expect(client.connect).toHaveBeenCalledWith(streamableHttpTransport);
+  });
+
+  it("connectConfiguredMcpServer falla si el servidor no existe", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    const { sdk } = createFakeSdk();
+
+    await expect(
+      connectConfiguredMcpServer({
+        name: "missing",
+        sdk,
+      }),
+    ).rejects.toThrow('MCP server "missing" was not found.');
+  });
+
   it("crea transporte stdio desde configuración MCP", () => {
     const { sdk, stdioTransport } = createFakeSdk();
 
