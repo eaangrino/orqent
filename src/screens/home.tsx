@@ -71,6 +71,10 @@ const slashCommands: SlashCommandItem[] = [
     description: "Configure permission mode",
   },
   {
+    label: "/mcp",
+    description: "View configured MCP servers",
+  },
+  {
     label: "/exit",
     description: "Exit Orqent and print resume command",
   },

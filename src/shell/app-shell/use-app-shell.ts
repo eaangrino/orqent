@@ -190,6 +190,10 @@ export function useAppShell() {
         setActiveView("permissions");
         return true;
 
+      case "/mcp":
+        setActiveView("mcp");
+        return true;
+
       case "/home":
       case "/clear":
         setActiveView("home");

@@ -38,7 +38,7 @@ describe("app shell storage", () => {
     process.env.ORQENT_DATA_DIR = tempDir;
 
     await saveAppShellConfig({
-      lastActiveView: "model",
+      lastActiveView: "mcp",
       permissionMode: "allow",
     });
 
@@ -46,7 +46,7 @@ describe("app shell storage", () => {
     const parsed = JSON.parse(raw);
 
     expect(parsed).toEqual({
-      lastActiveView: "model",
+      lastActiveView: "mcp",
       permissionMode: "allow",
     });
   });
