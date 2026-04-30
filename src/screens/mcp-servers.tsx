@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
+import { MultilineTextInput } from "../components/multiline-text-input.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   deleteMcpServer,
@@ -918,18 +919,22 @@ export function McpServersScreen({ onBack }: McpServersScreenProps) {
             marginTop={1}
             borderStyle="round"
             borderColor="cyan"
-            paddingX={1}>
-            <TextInput
+            paddingX={1}
+            paddingY={1}>
+            <MultilineTextInput
               value={pastedJson}
               placeholder='{"mcpServers":{"my-server":{"type":"stdio","command":"node","args":["server.js"]}}}'
-              focus
-              showCursor
+              focus={mode === "paste_json"}
+              minRows={3}
+              maxRows={12}
               onChange={setPastedJson}
             />
           </Box>
 
           <Box marginTop={1} flexDirection="column">
-            <Text dimColor>Ctrl+s save · Esc cancel</Text>
+            <Text dimColor>
+              Ctrl+s save · Alt+Enter/Shift+Enter newline · Esc cancel
+            </Text>
             <Text dimColor>
               Supported: stdio, sse, streamable_http. Fields: type/transport,
               command, args, env, url, headers, timeoutMs, startup_timeout_sec.
@@ -972,11 +977,24 @@ export function McpServersScreen({ onBack }: McpServersScreenProps) {
                   <Text dimColor>{field.description}</Text>
 
                   {isSelected ? (
-                    <TextInput
+                    <MultilineTextInput
                       value={draft[field.key]}
                       placeholder={field.placeholder}
-                      focus
-                      showCursor
+                      focus={mode === "form" && isSelected}
+                      minRows={
+                        field.key === "argsJson" ||
+                        field.key === "envJson" ||
+                        field.key === "headersJson"
+                          ? 3
+                          : 1
+                      }
+                      maxRows={
+                        field.key === "argsJson" ||
+                        field.key === "envJson" ||
+                        field.key === "headersJson"
+                          ? 8
+                          : 3
+                      }
                       onChange={(value) => {
                         setDraft((current) => ({
                           ...current,
@@ -994,8 +1012,8 @@ export function McpServersScreen({ onBack }: McpServersScreenProps) {
 
           <Box marginTop={1} flexDirection="column">
             <Text dimColor>
-              ↑/↓ fields · type to edit selected field · Ctrl+s save · Esc
-              cancel
+              ↑/↓ fields · type to edit selected field · Alt+Enter/Shift+Enter
+              newline · Ctrl+s save · Esc cancel
             </Text>
             <Text dimColor>
               JSON fields must be valid JSON. Example args: ["server.js"],

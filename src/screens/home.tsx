@@ -6,8 +6,8 @@ import {
   type SetStateAction,
 } from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
-import TextInput from "ink-text-input";
 import { SelectableList } from "../components/selectable-list.js";
+import { MultilineTextInput } from "../components/multiline-text-input.js";
 import type { OllamaChatMessage } from "../runtime/index.js";
 
 export type ChatMessage = {
@@ -369,20 +369,22 @@ export function HomeScreen({
         borderStyle="round"
         borderColor="gray"
         backgroundColor="gray"
-        paddingX={1}>
+        paddingX={1}
+        paddingY={1}>
         <Box width="100%">
           <Box marginRight={1}>
             <Text color="black">❯</Text>
           </Box>
 
           <Box flexGrow={1}>
-            <TextInput
+            <MultilineTextInput
               value={state.prompt}
               onChange={handleChange}
               onSubmit={handleSubmit}
-              placeholder="Escribe una intención o un slash command..."
+              placeholder="Write a prompt or slash command..."
               focus
-              showCursor
+              minRows={1}
+              maxRows={8}
             />
           </Box>
         </Box>
