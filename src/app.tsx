@@ -41,6 +41,10 @@ import {
   buildAgentCatalogPrompt,
   listAgentDefinitions,
 } from "./agents/index.js";
+import {
+  buildMcpServerCatalogPrompt,
+  listMcpServers,
+} from "./extensibility/mcp/index.js";
 
 const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
 
@@ -590,6 +594,7 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
       });
 
       const agentDefinitions = await listAgentDefinitions();
+      const mcpServers = await listMcpServers();
 
       const effectiveSystemPrompt = [
         baseEffectiveSystemPrompt,
@@ -597,6 +602,8 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
         buildRuntimeContextPrompt(),
         "",
         buildAgentCatalogPrompt(agentDefinitions),
+        "",
+        buildMcpServerCatalogPrompt(mcpServers),
         "",
         buildToolCallProtocolInstructions(defaultToolRegistry.list()),
       ].join("\n");

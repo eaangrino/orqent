@@ -16,6 +16,11 @@ import {
   agentRunBackgroundTaskTool,
   agentSpawnTool,
 } from "./builtin/agents.js";
+import {
+  mcpDeleteServerTool,
+  mcpListServersTool,
+  mcpUpsertServerTool,
+} from "./builtin/mcp.js";
 
 function normalizeToolName(name: string): string {
   return name.trim().toLowerCase();
@@ -88,6 +93,9 @@ export const builtinTools: AnyToolDefinition[] = [
   agentListBackgroundTasksTool,
   agentRunBackgroundTaskTool,
   agentInspectChildrenTool,
+  mcpListServersTool,
+  mcpUpsertServerTool,
+  mcpDeleteServerTool,
 ];
 
 export const defaultToolRegistry = createToolRegistry(builtinTools);

@@ -6,7 +6,9 @@ export type ToolPermission =
   | "shell:execute"
   | "project:search"
   | "agents:read"
-  | "agents:write";
+  | "agents:write"
+  | "mcp:read"
+  | "mcp:write";
 
 export type ToolJsonSchema = {
   type: "object";
