@@ -9,6 +9,7 @@ import {
   type ToolExecutionResult,
 } from "../index.js";
 import {
+  createMcpCallToolAuditMetadata,
   mcpCallToolTool,
   mcpDeleteServerTool,
   mcpListServersTool,
@@ -49,6 +50,27 @@ afterEach(async () => {
 });
 
 describe("mcp tools", () => {
+  it("createMcpCallToolAuditMetadata describe la acción MCP sin exponer valores", () => {
+    const metadata = createMcpCallToolAuditMetadata({
+      serverName: "postgres_local",
+      toolName: "execute_sql",
+      arguments: {
+        sql: "select * from users",
+        limit: 10,
+      },
+    });
+
+    expect(metadata).toEqual({
+      category: "mcp",
+      operation: "call_tool",
+      mcpServerName: "postgres_local",
+      mcpToolName: "execute_sql",
+      mcpArgumentKeys: [ "limit", "sql" ],
+    });
+
+    expect(JSON.stringify(metadata)).not.toContain("select * from users");
+  });
+
   it("mcp.call_tool rechaza input inválido", async () => {
     const result = await executeTool({
       registry: createRegistry(),

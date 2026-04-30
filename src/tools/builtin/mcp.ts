@@ -307,6 +307,16 @@ function normalizeMcpCallToolInput(input: unknown):
   };
 }
 
+export function createMcpCallToolAuditMetadata(input: McpCallToolInput) {
+  return {
+    category: "mcp",
+    operation: "call_tool",
+    mcpServerName: input.serverName,
+    mcpToolName: input.toolName,
+    mcpArgumentKeys: Object.keys(input.arguments).sort(),
+  };
+}
+
 // Export tools
 
 export const mcpListServersTool: ToolDefinition<
@@ -504,12 +514,22 @@ export const mcpCallToolTool: ToolDefinition<McpCallToolInput> = {
   isReadOnly: false,
   validateInput: normalizeMcpCallToolInput,
   async execute(input) {
+    const metadata = createMcpCallToolAuditMetadata(input);
+
     try {
       const result = await callConfiguredMcpServerTool(input);
 
       return {
         ok: true,
         result,
+        metadata: {
+          ...metadata,
+          mcpResponseIsError: Boolean(result.response.isError),
+          mcpResponseContentCount: Array.isArray(result.response.content)
+            ? result.response.content.length
+            : 0,
+          hasStructuredContent: result.response.structuredContent !== undefined,
+        },
       };
     } catch (error_) {
       return {
@@ -521,6 +541,7 @@ export const mcpCallToolTool: ToolDefinition<McpCallToolInput> = {
               ? error_.message
               : "Unknown MCP tool execution error.",
         },
+        metadata,
       };
     }
   },
