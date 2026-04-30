@@ -71,4 +71,107 @@ describe("CLI", () => {
     expect(stderr).toBe("");
     expect(stdout.trim()).toBe(packageJson.version);
   });
+
+  it("orqent mcp add registra un servidor MCP desde consola", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-cli-test-"));
+
+    const env = {
+      ...process.env,
+      ORQENT_DATA_DIR: tempDir,
+    };
+
+    const { stdout, stderr } = await runSourceCli(
+      [
+        "mcp",
+        "add",
+        "filesystem",
+        "--transport",
+        "stdio",
+        "--command",
+        "node",
+        "--arg",
+        "server.js",
+      ],
+      env,
+    );
+
+    const raw = await readFile(join(tempDir, "mcp", "servers.json"), "utf8");
+    const parsed = JSON.parse(raw);
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("MCP server persisted: filesystem");
+    expect(parsed.servers[ 0 ]).toMatchObject({
+      name: "filesystem",
+      enabled: true,
+      transport: "stdio",
+      command: "node",
+      args: [ "server.js" ],
+    });
+  });
+
+  it("orqent mcp list lista servidores sin exponer secretos", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-cli-test-"));
+
+    const env = {
+      ...process.env,
+      ORQENT_DATA_DIR: tempDir,
+    };
+
+    await runSourceCli(
+      [
+        "mcp",
+        "add",
+        "postgres_local",
+        "--transport",
+        "streamable_http",
+        "--url",
+        "http://127.0.0.1:6060/mcp",
+        "--header",
+        "x-database-uri=postgresql://postgres:admin@host.local:5433/Local",
+      ],
+      env,
+    );
+
+    const { stdout, stderr } = await runSourceCli([ "mcp", "list" ], env);
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("postgres_local");
+    expect(stdout).toContain("streamable_http");
+    expect(stdout).toContain("private=headers");
+    expect(stdout).not.toContain("postgresql://postgres");
+  });
+
+  it("orqent mcp remove elimina servidores desde consola", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-cli-test-"));
+
+    const env = {
+      ...process.env,
+      ORQENT_DATA_DIR: tempDir,
+    };
+
+    await runSourceCli(
+      [
+        "mcp",
+        "add",
+        "temporary",
+        "--transport",
+        "stdio",
+        "--command",
+        "node",
+      ],
+      env,
+    );
+
+    const { stdout, stderr } = await runSourceCli(
+      [ "mcp", "remove", "temporary" ],
+      env,
+    );
+
+    const raw = await readFile(join(tempDir, "mcp", "servers.json"), "utf8");
+    const parsed = JSON.parse(raw);
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("MCP server deleted: temporary");
+    expect(parsed.servers).toEqual([]);
+  });
 });
