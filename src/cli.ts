@@ -8,6 +8,7 @@ import { DEFAULT_OLLAMA_CONFIG } from "./models/ollama/config.js";
 import {
   listConfiguredMcpServerTools,
   listConfiguredMcpServerResources,
+  listConfiguredMcpServerPrompts,
   connectConfiguredMcpServer,
   deleteMcpServer,
   listMcpServers,
@@ -27,6 +28,7 @@ const helpText = `
     $ orqent mcp ping <name> [--json]
     $ orqent mcp tools <name> [--json]
     $ orqent mcp resources <name> [--json]
+    $ orqent mcp prompts <name> [--json]
     
   Options
     --help              Show help
@@ -53,10 +55,11 @@ const helpText = `
     $ orqent mcp list
     $ orqent mcp add filesystem --transport stdio --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg .
     $ orqent mcp add postgres_local --transport streamable_http --url http://127.0.0.1:6060/mcp --timeout-ms 20000 --header "Accept=application/json, text/event-stream"
-    $ orqent mcp remove postgres_local
-    $ orqent mcp ping postgres_local
-    $ orqent mcp tools postgres_local
-    $ orqent mcp resources postgres_local
+    $ orqent mcp remove everything
+    $ orqent mcp ping everything
+    $ orqent mcp tools everything
+    $ orqent mcp resources everything
+    $ orqent mcp prompts everything
 `;
 
 type RunAppOptions = {
@@ -231,6 +234,7 @@ async function handleMcpCommand({
         "  orqent mcp ping <name> [--json]",
         "  orqent mcp tools <name> [--json]",
         "  orqent mcp resources <name> [--json]",
+        "  orqent mcp prompts <name> [--json]",
       ].join("\n"),
     );
     return true;
@@ -584,6 +588,84 @@ async function handleMcpCommand({
       }
 
       logImpl(`MCP resources discovery failed: ${serverName}\n${message}`);
+    }
+
+    return true;
+  }
+
+  if (subcommand === "prompts" || subcommand === "list-prompts") {
+    const serverName = normalizeString(name);
+
+    if (!serverName) {
+      logImpl("Using: orqent mcp prompts <name>");
+      return true;
+    }
+
+    try {
+      const prompts = await listConfiguredMcpServerPrompts({
+        name: serverName,
+      });
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              server: serverName,
+              count: prompts.length,
+              prompts,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      if (prompts.length === 0) {
+        logImpl(`No MCP prompts discovered for server: ${serverName}`);
+        return true;
+      }
+
+      logImpl(
+        [
+          `MCP prompts discovered for server: ${serverName}`,
+          ...prompts.map((prompt) =>
+            [
+              `- ${prompt.name}`,
+              prompt.description ? `  ${prompt.description}` : null,
+              prompt.arguments.length > 0
+                ? `  arguments=${JSON.stringify(prompt.arguments)}`
+                : null,
+            ]
+              .filter((line): line is string => line !== null)
+              .join("\n"),
+          ),
+          "",
+          "Note: MCP prompt execution/rendering is not wired yet.",
+        ].join("\n"),
+      );
+    } catch (error_) {
+      const message =
+        error_ instanceof Error
+          ? error_.message
+          : "Unknown MCP prompts discovery error.";
+
+      if (flags.json) {
+        logImpl(
+          JSON.stringify(
+            {
+              ok: false,
+              server: serverName,
+              error: message,
+            },
+            null,
+            2,
+          ),
+        );
+        return true;
+      }
+
+      logImpl(`MCP prompts discovery failed: ${serverName}\n${message}`);
     }
 
     return true;

@@ -11,11 +11,17 @@ export type McpListResourcesResponseLike = {
   nextCursor?: string;
 };
 
+export type McpListPromptsResponseLike = {
+  prompts?: unknown[];
+  nextCursor?: string;
+};
+
 export type McpClientLike = {
   connect: (transport: unknown) => Promise<void>;
   close?: () => Promise<void>;
   listTools?: (params?: { cursor?: string }) => Promise<McpListToolsResponseLike>;
   listResources?: (params?: { cursor?: string }) => Promise<McpListResourcesResponseLike>;
+  listPrompts?: (params?: { cursor?: string }) => Promise<McpListPromptsResponseLike>;
 };
 
 export type McpTransportLike = {
@@ -51,6 +57,18 @@ export type McpDiscoveredResource = {
   raw: unknown;
 };
 
+export type McpDiscoveredPrompt = {
+  name: string;
+  description: string | null;
+  arguments: unknown[];
+  raw: unknown;
+};
+
+export type ListConfiguredMcpServerPromptsInput = {
+  name: string;
+  sdk?: McpSdkAdapter;
+};
+
 export type ListConfiguredMcpServerResourcesInput = {
   name: string;
   sdk?: McpSdkAdapter;
@@ -75,6 +93,22 @@ function normalizeMcpResource(value: unknown): McpDiscoveredResource | null {
       typeof value.mimeType === "string" && value.mimeType.trim()
         ? value.mimeType.trim()
         : null,
+    raw: value,
+  };
+}
+
+function normalizeMcpPrompt(value: unknown): McpDiscoveredPrompt | null {
+  if (!isRecord(value) || typeof value.name !== "string" || !value.name.trim()) {
+    return null;
+  }
+
+  return {
+    name: value.name.trim(),
+    description:
+      typeof value.description === "string" && value.description.trim()
+        ? value.description.trim()
+        : null,
+    arguments: Array.isArray(value.arguments) ? value.arguments : [],
     raw: value,
   };
 }
@@ -210,6 +244,11 @@ export async function createDefaultMcpSdkAdapter(): Promise<McpSdkAdapter> {
           return client.listResources(
             params as Parameters<typeof client.listResources>[ 0 ],
           ) as Promise<McpListResourcesResponseLike>;
+        },
+        listPrompts(params?: { cursor?: string }) {
+          return client.listPrompts(
+            params as Parameters<typeof client.listPrompts>[ 0 ],
+          ) as Promise<McpListPromptsResponseLike>;
         },
       };
     },
@@ -402,6 +441,63 @@ export async function listConfiguredMcpServerResources({
     }
 
     return resources.sort((left, right) => left.uri.localeCompare(right.uri));
+  } finally {
+    await connected.close();
+  }
+}
+
+
+export async function listConfiguredMcpServerPrompts({
+  name,
+  sdk,
+}: ListConfiguredMcpServerPromptsInput): Promise<McpDiscoveredPrompt[]> {
+  const connected = await connectConfiguredMcpServer({
+    name,
+    sdk,
+  });
+
+  try {
+    if (!connected.client.listPrompts) {
+      throw new Error("MCP client adapter does not support listPrompts.");
+    }
+
+    const prompts: McpDiscoveredPrompt[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+
+    for (let page = 0; page < 50; page++) {
+      const response = await withTimeout({
+        promise: connected.client.listPrompts({ cursor }),
+        timeoutMs: connected.server.timeoutMs,
+        label: `MCP server "${connected.server.name}" prompt discovery`,
+      });
+
+      prompts.push(
+        ...(response.prompts ?? [])
+          .map(normalizeMcpPrompt)
+          .filter((prompt): prompt is McpDiscoveredPrompt => prompt !== null),
+      );
+
+      const nextCursor =
+        typeof response.nextCursor === "string" && response.nextCursor.trim()
+          ? response.nextCursor.trim()
+          : undefined;
+
+      if (!nextCursor) {
+        break;
+      }
+
+      if (seenCursors.has(nextCursor)) {
+        throw new Error(
+          `MCP server "${connected.server.name}" returned a repeated prompts cursor.`,
+        );
+      }
+
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+
+    return prompts.sort((left, right) => left.name.localeCompare(right.name));
   } finally {
     await connected.close();
   }

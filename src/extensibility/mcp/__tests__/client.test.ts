@@ -9,6 +9,7 @@ import {
   upsertMcpServer,
   listConfiguredMcpServerTools,
   listConfiguredMcpServerResources,
+  listConfiguredMcpServerPrompts,
   type McpClientLike,
   type McpSdkAdapter,
   type McpServerConfig,
@@ -46,6 +47,9 @@ function createFakeSdk() {
     }),
     listResources: vi.fn().mockResolvedValue({
       resources: [],
+    }),
+    listPrompts: vi.fn().mockResolvedValue({
+      prompts: [],
     }),
   };
 
@@ -92,6 +96,131 @@ afterEach(async () => {
 });
 
 describe("mcp client", () => {
+  it("listConfiguredMcpServerPrompts descubre prompts de un servidor persistido", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "everything",
+      transport: "stdio",
+      command: "npx",
+      args: [ "-y", "@modelcontextprotocol/server-everything" ],
+      timeoutMs: 30_000,
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.listPrompts!).mockResolvedValue({
+      prompts: [
+        {
+          name: "review-code",
+          description: "Review code changes.",
+          arguments: [
+            {
+              name: "language",
+              description: "Programming language.",
+              required: true,
+            },
+          ],
+        },
+        {
+          name: "summarize",
+        },
+      ],
+    });
+
+    const prompts = await listConfiguredMcpServerPrompts({
+      name: "everything",
+      sdk,
+    });
+
+    expect(prompts).toEqual([
+      {
+        name: "review-code",
+        description: "Review code changes.",
+        arguments: [
+          {
+            name: "language",
+            description: "Programming language.",
+            required: true,
+          },
+        ],
+        raw: {
+          name: "review-code",
+          description: "Review code changes.",
+          arguments: [
+            {
+              name: "language",
+              description: "Programming language.",
+              required: true,
+            },
+          ],
+        },
+      },
+      {
+        name: "summarize",
+        description: null,
+        arguments: [],
+        raw: {
+          name: "summarize",
+        },
+      },
+    ]);
+
+    expect(client.listPrompts).toHaveBeenCalledWith({
+      cursor: undefined,
+    });
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("listConfiguredMcpServerPrompts soporta paginación", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await upsertMcpServer({
+      name: "paged_prompts",
+      transport: "stdio",
+      command: "node",
+      args: [ "server.js" ],
+    });
+
+    const { sdk, client } = createFakeSdk();
+
+    vi.mocked(client.listPrompts!)
+      .mockResolvedValueOnce({
+        prompts: [
+          {
+            name: "b_prompt",
+          },
+        ],
+        nextCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        prompts: [
+          {
+            name: "a_prompt",
+          },
+        ],
+      });
+
+    const prompts = await listConfiguredMcpServerPrompts({
+      name: "paged_prompts",
+      sdk,
+    });
+
+    expect(prompts.map((prompt) => prompt.name)).toEqual([
+      "a_prompt",
+      "b_prompt",
+    ]);
+
+    expect(client.listPrompts).toHaveBeenNthCalledWith(1, {
+      cursor: undefined,
+    });
+    expect(client.listPrompts).toHaveBeenNthCalledWith(2, {
+      cursor: "page-2",
+    });
+  });
+
   it("listConfiguredMcpServerTools descubre tools de un servidor persistido", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-mcp-client-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;
