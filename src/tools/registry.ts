@@ -1,3 +1,4 @@
+import { searchFindTool, searchRgTool } from "./builtin/search.js";
 import {
   filesystemListTool,
   filesystemReadTool,
@@ -116,6 +117,8 @@ export const builtinTools: AnyToolDefinition[] = [
   gitBranchTool,
   gitShowTool,
   gitRemotesTool,
+  searchRgTool,
+  searchFindTool,
   agentCreateDefinitionTool,
   agentListDefinitionsTool,
   agentSpawnTool,
