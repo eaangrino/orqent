@@ -5,6 +5,15 @@ import {
   projectSearchTool,
 } from "./builtin/filesystem.js";
 import { shellExecuteTool } from "./builtin/shell.js";
+import {
+  dockerComposePsTool,
+  dockerImagesTool,
+  dockerInspectTool,
+  dockerLogsTool,
+  dockerNetworksTool,
+  dockerPsTool,
+  dockerVolumesTool,
+} from "./builtin/docker.js";
 import type { AnyToolDefinition } from "./types.js";
 import {
   agentCreateDefinitionTool,
@@ -86,6 +95,13 @@ export const builtinTools: AnyToolDefinition[] = [
   filesystemWriteTool,
   projectSearchTool,
   shellExecuteTool,
+  dockerPsTool,
+  dockerInspectTool,
+  dockerLogsTool,
+  dockerComposePsTool,
+  dockerImagesTool,
+  dockerNetworksTool,
+  dockerVolumesTool,
   agentCreateDefinitionTool,
   agentListDefinitionsTool,
   agentSpawnTool,
