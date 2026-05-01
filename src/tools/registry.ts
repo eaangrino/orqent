@@ -14,6 +14,14 @@ import {
   dockerPsTool,
   dockerVolumesTool,
 } from "./builtin/docker.js";
+import {
+  gitBranchTool,
+  gitDiffTool,
+  gitLogTool,
+  gitRemotesTool,
+  gitShowTool,
+  gitStatusTool,
+} from "./builtin/git.js";
 import type { AnyToolDefinition } from "./types.js";
 import {
   agentCreateDefinitionTool,
@@ -102,6 +110,12 @@ export const builtinTools: AnyToolDefinition[] = [
   dockerImagesTool,
   dockerNetworksTool,
   dockerVolumesTool,
+  gitStatusTool,
+  gitDiffTool,
+  gitLogTool,
+  gitBranchTool,
+  gitShowTool,
+  gitRemotesTool,
   agentCreateDefinitionTool,
   agentListDefinitionsTool,
   agentSpawnTool,
