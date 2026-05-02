@@ -36,7 +36,8 @@ function normalizeAppView(value: unknown): AppView {
     value === "params" ||
     value === "thinking" ||
     value === "permissions" ||
-    value === "mcp"
+    value === "mcp" ||
+    value === "skills"
   ) {
     return value;
   }

@@ -11,6 +11,7 @@ type MultilineTextInputProps = {
   minRows?: number;
   maxRows?: number;
   disabled?: boolean;
+  cursorResetKey?: number;
 };
 
 function normalizePastedInput(input: string): string {
@@ -136,12 +137,17 @@ export function MultilineTextInput({
   minRows = 1,
   maxRows = 8,
   disabled = false,
+  cursorResetKey = 0,
 }: MultilineTextInputProps) {
   const [cursorOffset, setCursorOffset] = useState(value.length);
 
   useEffect(() => {
     setCursorOffset((current) => clamp(current, 0, value.length));
   }, [value.length]);
+
+  useEffect(() => {
+    setCursorOffset(value.length);
+  }, [cursorResetKey, value.length]);
 
   useInput(
     (input, key) => {

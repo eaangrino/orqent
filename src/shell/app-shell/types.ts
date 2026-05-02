@@ -5,7 +5,8 @@ export type AppView =
   | "params"
   | "thinking"
   | "permissions"
-  | "mcp";
+  | "mcp"
+  | "skills";
 
 export type OllamaEndpointOption = {
   label: string;

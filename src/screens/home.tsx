@@ -8,6 +8,13 @@ import {
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { SelectableList } from "../components/selectable-list.js";
 import { MultilineTextInput } from "../components/multiline-text-input.js";
+import {
+  getSkillMentionSuggestions,
+  listSkillDefinitions,
+  replaceActiveSkillMention,
+  type SkillDefinition,
+  type SkillMentionSuggestion,
+} from "../extensibility/skills/index.js";
 import type { OllamaChatMessage } from "../runtime/index.js";
 
 export type ChatMessage = {
@@ -75,6 +82,10 @@ const slashCommands: SlashCommandItem[] = [
     description: "View configured MCP servers",
   },
   {
+    label: "/skills",
+    description: "View configured declarative skills",
+  },
+  {
     label: "/exit",
     description: "Exit Orqent and print resume command",
   },
@@ -105,6 +116,9 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const [state, setState] = useState<HomeUiState>(initialState);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  const [skills, setSkills] = useState<SkillDefinition[]>([]);
+  const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
+  const [inputCursorResetKey, setInputCursorResetKey] = useState(0);
   const { columns } = useWindowSize();
 
   const inputWidth = useMemo(() => {
@@ -124,8 +138,36 @@ export function HomeScreen({
     );
   }, [state.prompt]);
 
+  const filteredSkillMentions = useMemo(
+    () =>
+      getSkillMentionSuggestions({
+        prompt: state.prompt,
+        skills,
+      }),
+    [skills, state.prompt],
+  );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadSkills() {
+      const nextSkills = await listSkillDefinitions();
+
+      if (!isCancelled) {
+        setSkills(nextSkills);
+      }
+    }
+
+    void loadSkills();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     setSelectedCommandIndex(0);
+    setSelectedSkillIndex(0);
   }, [state.prompt]);
 
   useEffect(() => {
@@ -134,40 +176,79 @@ export function HomeScreen({
     }
   }, [filteredSlashCommands.length, selectedCommandIndex]);
 
+  useEffect(() => {
+    if (selectedSkillIndex >= filteredSkillMentions.length) {
+      setSelectedSkillIndex(0);
+    }
+  }, [filteredSkillMentions.length, selectedSkillIndex]);
+
   useInput((input, key) => {
-    if (!state.prompt.trim().startsWith("/")) {
+    const isUsingSlashSuggestions =
+      state.prompt.trim().startsWith("/") && filteredSlashCommands.length > 0;
+    const isUsingSkillSuggestions = filteredSkillMentions.length > 0;
+
+    if (!isUsingSlashSuggestions && !isUsingSkillSuggestions) {
       return;
     }
 
-    if (filteredSlashCommands.length === 0) {
+    if (isUsingSlashSuggestions) {
+      if (key.upArrow) {
+        setSelectedCommandIndex((current) =>
+          current <= 0 ? filteredSlashCommands.length - 1 : current - 1,
+        );
+        return;
+      }
+
+      if (key.downArrow) {
+        setSelectedCommandIndex((current) =>
+          current >= filteredSlashCommands.length - 1 ? 0 : current + 1,
+        );
+        return;
+      }
+
+      if (key.escape) {
+        setState((current) => ({
+          ...current,
+          prompt: "",
+        }));
+        setSelectedCommandIndex(0);
+        setInputCursorResetKey((current) => current + 1);
+        return;
+      }
+
+      if (input === "\t" || key.tab) {
+        const selected = filteredSlashCommands[selectedCommandIndex];
+
+        if (!selected) {
+          return;
+        }
+
+        setState((current) => ({
+          ...current,
+          prompt: selected.label,
+        }));
+        setInputCursorResetKey((current) => current + 1);
+      }
+
       return;
     }
 
     if (key.upArrow) {
-      setSelectedCommandIndex((current) =>
-        current <= 0 ? filteredSlashCommands.length - 1 : current - 1,
+      setSelectedSkillIndex((current) =>
+        current <= 0 ? filteredSkillMentions.length - 1 : current - 1,
       );
       return;
     }
 
     if (key.downArrow) {
-      setSelectedCommandIndex((current) =>
-        current >= filteredSlashCommands.length - 1 ? 0 : current + 1,
+      setSelectedSkillIndex((current) =>
+        current >= filteredSkillMentions.length - 1 ? 0 : current + 1,
       );
       return;
     }
 
-    if (key.escape) {
-      setState((current) => ({
-        ...current,
-        prompt: "",
-      }));
-      setSelectedCommandIndex(0);
-      return;
-    }
-
-    if (input === "\t") {
-      const selected = filteredSlashCommands[selectedCommandIndex];
+    if (input === "\t" || key.tab) {
+      const selected = filteredSkillMentions[selectedSkillIndex];
 
       if (!selected) {
         return;
@@ -175,8 +256,9 @@ export function HomeScreen({
 
       setState((current) => ({
         ...current,
-        prompt: selected.label,
+        prompt: replaceActiveSkillMention(current.prompt, selected.identifier),
       }));
+      setInputCursorResetKey((current) => current + 1);
     }
   });
 
@@ -209,6 +291,8 @@ export function HomeScreen({
         isSubmitting: false,
       }));
       setSelectedCommandIndex(0);
+      setSelectedSkillIndex(0);
+      setInputCursorResetKey((current) => current + 1);
       return;
     }
 
@@ -259,6 +343,7 @@ export function HomeScreen({
       isSubmitting: true,
       activeAssistantMessageId: assistantMessageId,
     }));
+    setInputCursorResetKey((current) => current + 1);
 
     setMessages((current) => [...current, userMessage, assistantMessage]);
 
@@ -325,6 +410,29 @@ export function HomeScreen({
 
   const isShowingSlashCommands = state.prompt.trim().startsWith("/");
 
+  const renderSkillMentionSuggestion = ({
+    item,
+    isSelected,
+  }: {
+    item: SkillMentionSuggestion;
+    isSelected: boolean;
+  }) => (
+    <Box
+      flexDirection="column"
+      paddingX={1}
+      backgroundColor={isSelected ? "gray" : undefined}>
+      <Box>
+        <Text color={isSelected ? "black" : undefined}>
+          {isSelected ? "❯ " : "  "}
+        </Text>
+        <Text color={isSelected ? "black" : "cyan"}>
+          @skill:{item.identifier}
+        </Text>
+      </Box>
+      <Text dimColor={!isSelected}>{item.description}</Text>
+    </Box>
+  );
+
   return (
     <Box flexDirection="column" alignItems="center" width="100%">
       {messages.length > 0 ? (
@@ -340,27 +448,78 @@ export function HomeScreen({
             const isUser = message.role === "user";
 
             return (
-              <Box
-                key={message.id}
-                flexDirection="column"
-                marginBottom={1}
-                paddingX={1}
-                paddingY={1}
-                backgroundColor={isUser ? "#4a4a4a" : "#2f2f2f"}>
-                <Box justifyContent="space-between">
-                  <Text color={isUser ? "cyan" : "green"} bold>
-                    {isUser ? "User" : "Orqent"}
-                  </Text>
-
-                  {!isUser && message.status ? (
-                    <Text dimColor>{message.status}</Text>
-                  ) : null}
-                </Box>
-
-                <Text color="white">{message.content}</Text>
+              <Box key={message.id} flexDirection="column" marginBottom={1}>
+                <Text color={isUser ? "green" : "cyan"}>
+                  {isUser ? "User" : "Orqent"}
+                </Text>
+                <Text>{message.content}</Text>
+                {message.status ? <Text dimColor>{message.status}</Text> : null}
               </Box>
             );
           })}
+        </Box>
+      ) : null}
+
+      {contextStatus ? (
+        <Box width={inputWidth} marginBottom={1}>
+          <Text dimColor>{contextStatus}</Text>
+        </Box>
+      ) : null}
+
+      {promptStatus ? (
+        <Box width={inputWidth} marginBottom={1}>
+          <Text dimColor>{promptStatus}</Text>
+        </Box>
+      ) : null}
+
+      {isShowingSlashCommands && filteredSlashCommands.length > 0 ? (
+        <Box
+          marginBottom={1}
+          flexDirection="column"
+          width={inputWidth}
+          borderStyle="round"
+          borderColor="gray"
+          paddingX={1}>
+          <Text dimColor>Commands · ↑/↓ navigate · Tab complete</Text>
+          <SelectableList
+            items={filteredSlashCommands}
+            selectedIndex={selectedCommandIndex}
+            getKey={(item) => item.label}
+            renderItem={({ item, isSelected }) => (
+              <Box
+                flexDirection="column"
+                paddingX={1}
+                backgroundColor={isSelected ? "gray" : undefined}>
+                <Box>
+                  <Text color={isSelected ? "black" : undefined}>
+                    {isSelected ? "❯ " : "  "}
+                  </Text>
+                  <Text color={isSelected ? "black" : "cyan"}>
+                    {item.label}
+                  </Text>
+                </Box>
+                <Text dimColor={!isSelected}>{item.description}</Text>
+              </Box>
+            )}
+          />
+        </Box>
+      ) : null}
+
+      {filteredSkillMentions.length > 0 ? (
+        <Box
+          marginBottom={1}
+          flexDirection="column"
+          width={inputWidth}
+          borderStyle="round"
+          borderColor="cyan"
+          paddingX={1}>
+          <Text dimColor>Skills · ↑/↓ navigate · Tab insert</Text>
+          <SelectableList
+            items={filteredSkillMentions}
+            selectedIndex={selectedSkillIndex}
+            getKey={(item) => item.identifier}
+            renderItem={renderSkillMentionSuggestion}
+          />
         </Box>
       ) : null}
 
@@ -368,59 +527,18 @@ export function HomeScreen({
         width={inputWidth}
         borderStyle="round"
         borderColor="gray"
-        backgroundColor="gray"
-        paddingX={1}
-        paddingY={1}>
-        <Box width="100%">
-          <Box marginRight={1}>
-            <Text color="black">❯</Text>
-          </Box>
-
-          <Box flexGrow={1}>
-            <MultilineTextInput
-              value={state.prompt}
-              onChange={handleChange}
-              onSubmit={handleSubmit}
-              placeholder="Write a prompt or slash command..."
-              focus
-              minRows={1}
-              maxRows={8}
-            />
-          </Box>
-        </Box>
-      </Box>
-
-      {isShowingSlashCommands ? (
-        <Box
-          marginTop={1}
-          width={inputWidth}
-          flexDirection="column"
-          borderStyle="round"
-          borderColor="gray"
-          paddingX={1}>
-          <SelectableList
-            items={filteredSlashCommands}
-            selectedIndex={selectedCommandIndex}
-            getKey={(command) => command.label}
-            emptyText="There are no matching commands."
-            renderItem={({ item: command, isSelected }) => (
-              <Box justifyContent="space-between">
-                <Text color={isSelected ? "cyan" : undefined}>
-                  {isSelected ? "❯ " : "  "}
-                  {command.label}
-                </Text>
-                <Text dimColor>{command.description}</Text>
-              </Box>
-            )}
-          />
-        </Box>
-      ) : null}
-
-      <Box marginTop={1} flexDirection="column" alignItems="center">
-        <Text dimColor>
-          / for commands · ↑/↓ to navigate · Enter to execute
-        </Text>
-        <Text dimColor>{contextStatus}</Text>
+        paddingX={1}>
+        <MultilineTextInput
+          value={state.prompt}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          placeholder="Ask a question, type / for commands or @skill: for skills"
+          width="100%"
+          minRows={1}
+          maxRows={6}
+          disabled={state.isSubmitting}
+          cursorResetKey={inputCursorResetKey}
+        />
       </Box>
     </Box>
   );

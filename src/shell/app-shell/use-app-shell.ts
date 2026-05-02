@@ -235,6 +235,11 @@ export function useAppShell() {
         setActiveView("mcp");
         return true;
 
+      case "/skill":
+      case "/skills":
+        setActiveView("skills");
+        return true;
+
       case "/home":
       case "/clear":
         setActiveView("home");

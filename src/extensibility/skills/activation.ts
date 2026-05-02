@@ -30,7 +30,6 @@ function matchesKeyword(prompt: string, keyword: string): boolean {
 
 const MANUAL_SKILL_PATTERNS = [
   /(?:^|\s)@skill:([a-z][a-z0-9._-]*)/gi,
-  /(?:^|\s)\/skill\s+([a-z][a-z0-9._-]*)/gi,
 ];
 
 function normalizeSkillIdentifier(value: string): string {

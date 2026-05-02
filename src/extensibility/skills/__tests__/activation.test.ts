@@ -37,16 +37,16 @@ describe("skill activation", () => {
     ).toEqual([ "typescript-reviewer" ]);
   });
 
-  it("extrae identifiers con /skill identifier", () => {
+  it("no trata /skill como activación manual inline", () => {
     expect(
       extractManualSkillIdentifiers("/skill TypeScript-Reviewer revisa este archivo"),
-    ).toEqual([ "typescript-reviewer" ]);
+    ).toEqual([]);
   });
 
   it("deduplica identifiers manuales repetidos", () => {
     expect(
       extractManualSkillIdentifiers(
-        "/skill typescript-reviewer @skill:typescript-reviewer",
+        "@skill:typescript-reviewer @skill:typescript-reviewer",
       ),
     ).toEqual([ "typescript-reviewer" ]);
   });
@@ -54,7 +54,7 @@ describe("skill activation", () => {
   it("activa solo skills enabled y manual", () => {
     const selections = resolveManuallyActivatedSkills({
       prompt:
-        "/skill typescript-reviewer /skill disabled-skill /skill auto-only-skill",
+        "@skill:typescript-reviewer @skill:disabled-skill @skill:auto-only-skill",
       skills: [
         createSkill({
           identifier: "typescript-reviewer",
@@ -103,7 +103,7 @@ describe("skill activation", () => {
 
   it("ignora requests de skills inexistentes", () => {
     const selections = resolveManuallyActivatedSkills({
-      prompt: "/skill missing-skill",
+      prompt: "@skill:missing-skill",
       skills: [
         createSkill(),
       ],

@@ -68,6 +68,19 @@ describe("app shell storage", () => {
     });
   });
 
+  it("loadAppShellConfig acepta vista skills", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "orqent-app-shell-test-"));
+    process.env.ORQENT_DATA_DIR = tempDir;
+
+    await saveAppShellConfig({
+      lastActiveView: "skills",
+    });
+
+    await expect(loadAppShellConfig()).resolves.toMatchObject({
+      lastActiveView: "skills",
+    });
+  });
+
   it("loadAppShellConfig normaliza valores inválidos", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "orqent-app-shell-test-"));
     process.env.ORQENT_DATA_DIR = tempDir;

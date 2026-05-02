@@ -1,5 +1,6 @@
-export * from "./types.js";export * from "./types.js";
+export * from "./types.js";
 export * from "./storage.js";
 export * from "./registry.js";
 export * from "./prompt.js";
 export * from "./activation.js";
+export * from "./mention.js";

@@ -52,6 +52,7 @@ import {
   resolveActiveSkillsForPrompt,
 } from "./extensibility/skills/index.js";
 import { McpServersScreen } from "./screens/mcp-servers.js";
+import { SkillsScreen } from "./screens/skills.js";
 
 const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
 
@@ -976,6 +977,10 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
 
         {activeView === "mcp" ? (
           <McpServersScreen onBack={handleBackToHome} />
+        ) : null}
+
+        {activeView === "skills" ? (
+          <SkillsScreen onBack={handleBackToHome} />
         ) : null}
       </Box>
     </Layout>
