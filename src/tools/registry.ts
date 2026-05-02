@@ -56,6 +56,18 @@ import {
   mcpListServersTool,
   mcpUpsertServerTool,
 } from "./builtin/mcp.js";
+import {
+  nodeVersionTool,
+  npmInstallTool,
+  npmRunTool,
+  npmScriptsTool,
+  npmUninstallTool,
+  npmVersionTool,
+  nvmCurrentTool,
+  nvmInstallTool,
+  nvmListTool,
+  nvmUseTool,
+} from "./builtin/node-runtime.js";
 
 function normalizeToolName(name: string): string {
   return name.trim().toLowerCase();
@@ -163,6 +175,16 @@ export const builtinTools: AnyToolDefinition[] = [
   mcpUpsertServerTool,
   mcpDeleteServerTool,
   mcpCallToolTool,
+  nodeVersionTool,
+  npmVersionTool,
+  npmScriptsTool,
+  nvmCurrentTool,
+  nvmListTool,
+  npmRunTool,
+  npmInstallTool,
+  npmUninstallTool,
+  nvmUseTool,
+  nvmInstallTool,
 ];
 
 export const defaultToolRegistry = createToolRegistry(builtinTools);
