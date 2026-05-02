@@ -193,6 +193,10 @@ describe("skill markdown loader", () => {
 
     await writeFile(join(globalDir, "bad.md"), "invalid", "utf8");
 
-    await expect(listSkillMarkdownDefinitions()).resolves.toEqual([]);
+    await expect(
+      listSkillMarkdownDefinitions({
+        cwd: join(tempDir, "workspace"),
+      }),
+    ).resolves.toEqual([]);
   });
 });

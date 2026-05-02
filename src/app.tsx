@@ -12,6 +12,8 @@ import {
   buildEffectiveSystemPrompt,
   buildToolCallProtocolInstructions,
   buildToolResultMessage,
+  buildRuntimeContextPrompt,
+  resolveRuntimeCwd,
   compactChatHistoryWithOllama,
   executeModelToolCall,
   loadSystemPrompt,
@@ -36,7 +38,6 @@ import {
   type ToolConfirmationDecision,
   type ToolConfirmationRequest,
 } from "./tools/index.js";
-import { realpathSync } from "node:fs";
 import {
   buildAgentCatalogPrompt,
   listAgentDefinitions,
@@ -55,26 +56,6 @@ import { McpServersScreen } from "./screens/mcp-servers.js";
 import { SkillsScreen } from "./screens/skills.js";
 
 const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
-
-function resolveRuntimeCwd() {
-  try {
-    return realpathSync(process.cwd()).normalize("NFC");
-  } catch {
-    return process.cwd().normalize("NFC");
-  }
-}
-
-function buildRuntimeContextPrompt() {
-  return [
-    "Runtime context:",
-    `- Current working directory: ${resolveRuntimeCwd()}`,
-    "",
-    "Runtime context rules:",
-    "- If the user asks for the current project path, current directory, working directory, answer directly using the current working directory above.",
-    "- Do not ask the user to run pwd when the current working directory is already provided in runtime context.",
-    "- Use tools only when the answer requires inspecting files, reading content, searching project text, or executing an action.",
-  ].join("\n");
-}
 
 function safeJsonStringify(value: unknown): string {
   try {
@@ -614,7 +595,9 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
       const effectiveSystemPrompt = [
         baseEffectiveSystemPrompt,
         "",
-        buildRuntimeContextPrompt(),
+        buildRuntimeContextPrompt({
+          cwd: process.cwd(),
+        }),
         "",
         buildAgentCatalogPrompt(agentDefinitions),
         "",
