@@ -7,13 +7,21 @@ import {
 } from "./builtin/filesystem.js";
 import { shellExecuteTool } from "./builtin/shell.js";
 import {
+  dockerComposeDownTool,
   dockerComposePsTool,
+  dockerComposeUpTool,
   dockerImagesTool,
   dockerInspectTool,
   dockerLogsTool,
   dockerNetworksTool,
   dockerPsTool,
+  dockerPullTool,
   dockerVolumesTool,
+  dockerRestartTool,
+  dockerStartTool,
+  dockerStopTool,
+  dockerRmTool,
+  dockerExecTool,
 } from "./builtin/docker.js";
 import {
   gitBranchTool,
@@ -111,6 +119,14 @@ export const builtinTools: AnyToolDefinition[] = [
   dockerImagesTool,
   dockerNetworksTool,
   dockerVolumesTool,
+  dockerPullTool,
+  dockerComposeUpTool,
+  dockerComposeDownTool,
+  dockerStopTool,
+  dockerStartTool,
+  dockerRestartTool,
+  dockerRmTool,
+  dockerExecTool,
   gitStatusTool,
   gitDiffTool,
   gitLogTool,

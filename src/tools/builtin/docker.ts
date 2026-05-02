@@ -211,6 +211,137 @@ export type DockerVolumesResult = {
   outputTruncated: boolean;
 };
 
+export type DockerPullInput = {
+  image: string;
+  platform: string | null;
+};
+
+export type DockerPullResult = {
+  cwd: string;
+  image: string;
+  platform: string | null;
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
+export type DockerComposeUpInput = {
+  services: string[];
+  detached: boolean;
+  build: boolean;
+  removeOrphans: boolean;
+};
+
+export type DockerComposeUpResult = {
+  cwd: string;
+  services: string[];
+  detached: boolean;
+  build: boolean;
+  removeOrphans: boolean;
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
+export type DockerComposeDownInput = {
+  removeOrphans: boolean;
+  removeVolumes: boolean;
+};
+
+export type DockerComposeDownResult = {
+  cwd: string;
+  removeOrphans: boolean;
+  removeVolumes: boolean;
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
+export type DockerContainerActionName = "stop" | "start" | "restart";
+
+export type DockerContainerActionInput = {
+  target: string;
+  timeoutSeconds: number | null;
+};
+
+export type DockerContainerActionResult = {
+  cwd: string;
+  action: DockerContainerActionName;
+  target: string;
+  timeoutSeconds: number | null;
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
+export type DockerRmInput = {
+  target: string;
+  force: boolean;
+  removeVolumes: boolean;
+};
+
+export type DockerRmResult = {
+  cwd: string;
+  target: string;
+  force: boolean;
+  removeVolumes: boolean;
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
+export type DockerExecInput = {
+  target: string;
+  command: string;
+  args: string[];
+  workdir: string | null;
+  user: string | null;
+  env: Record<string, string>;
+};
+
+export type DockerExecResult = {
+  cwd: string;
+  target: string;
+  commandToRun: string;
+  argsToRun: string[];
+  workdir: string | null;
+  user: string | null;
+  envKeys: string[];
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
 export type DockerNetworksResult = {
   cwd: string;
   maxNetworks: number;
@@ -1622,6 +1753,1189 @@ export function createDockerVolumesTool(
   };
 }
 
+function validateDockerImageRef(value: unknown): string | null {
+  const image = typeof value === "string" ? value.trim() : "";
+
+  if (!image) {
+    return null;
+  }
+
+  if (/[\r\n]/.test(image)) {
+    return null;
+  }
+
+  if (image.startsWith("-")) {
+    return null;
+  }
+
+  return image;
+}
+
+function normalizeDockerPlatform(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const platform = value.trim();
+
+  if (/[\r\n]/.test(platform)) {
+    return null;
+  }
+
+  if (platform.startsWith("-")) {
+    return null;
+  }
+
+  return platform;
+}
+
+function validateDockerPullInput(
+  input: unknown,
+): ToolValidationResult<DockerPullInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const image = validateDockerImageRef(input.image);
+
+  if (!image) {
+    return {
+      ok: false,
+      error:
+        "image must be a non-empty Docker image reference without line breaks and must not start with '-'.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      image,
+      platform: normalizeDockerPlatform(input.platform),
+    },
+  };
+}
+
+function buildDockerPullArgs(input: DockerPullInput): string[] {
+  const args = [ "pull" ];
+
+  if (input.platform) {
+    args.push("--platform", input.platform);
+  }
+
+  args.push(input.image);
+
+  return args;
+}
+
+function createDockerPullError(
+  result: CliCommandAdapterResult,
+): ToolExecutionResult<DockerPullResult> {
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: "docker_pull_timed_out",
+        message: "docker pull timed out.",
+        details: result,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "docker",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "docker_pull_failed",
+      message:
+        result.stderr.trim() ||
+        `docker pull failed with exit code ${String(result.exitCode)}.`,
+      details: result,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "docker",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+export function createDockerPullTool(
+  runCommand: CliCommandRunner = executeCliCommand,
+): ToolDefinition<DockerPullInput, DockerPullResult> {
+  return {
+    name: "docker.pull",
+    description:
+      "Pull a Docker image using docker pull through Orqent's controlled CLI adapter. Mutates local Docker image cache and may access the network. Does not execute arbitrary Docker commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        image: {
+          type: "string",
+          description:
+            "Docker image reference to pull, for example postgres:16 or node:22-alpine. Must not contain line breaks or start with '-'.",
+        },
+        platform: {
+          type: "string",
+          description:
+            "Optional platform, for example linux/amd64 or linux/arm64.",
+        },
+      },
+      required: [ "image" ],
+      additionalProperties: false,
+    },
+    risk: "medium",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: 120_000,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: validateDockerPullInput,
+    async execute(input, context) {
+      const args = buildDockerPullArgs(input);
+
+      const result = await runCommand({
+        command: "docker",
+        args,
+        cwd: context.cwd,
+        timeoutMs: 120_000,
+        maxOutputChars: DOCKER_PS_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createDockerPullError(result);
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          image: input.image,
+          platform: input.platform,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          command: {
+            command: "docker",
+            args,
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "docker",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
+function normalizeDockerComposeServiceNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => !/[\r\n]/.test(item))
+        .filter((item) => !item.startsWith("-")),
+    ),
+  );
+}
+
+function validateDockerComposeUpInput(
+  input: unknown,
+): ToolValidationResult<DockerComposeUpInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      services: normalizeDockerComposeServiceNames(input.services),
+      detached: normalizeBoolean(input.detached, true),
+      build: normalizeBoolean(input.build, false),
+      removeOrphans: normalizeBoolean(input.removeOrphans, false),
+    },
+  };
+}
+
+function buildDockerComposeUpArgs(input: DockerComposeUpInput): string[] {
+  const args = [ "compose", "up" ];
+
+  if (input.detached) {
+    args.push("--detach");
+  }
+
+  if (input.build) {
+    args.push("--build");
+  }
+
+  if (input.removeOrphans) {
+    args.push("--remove-orphans");
+  }
+
+  args.push(...input.services);
+
+  return args;
+}
+
+function createDockerComposeUpError(
+  result: CliCommandAdapterResult,
+): ToolExecutionResult<DockerComposeUpResult> {
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: "docker_compose_up_timed_out",
+        message: "docker compose up timed out.",
+        details: result,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "docker",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "docker_compose_up_failed",
+      message:
+        result.stderr.trim() ||
+        `docker compose up failed with exit code ${String(result.exitCode)}.`,
+      details: result,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "docker",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+export function createDockerComposeUpTool(
+  runCommand: CliCommandRunner = executeCliCommand,
+): ToolDefinition<DockerComposeUpInput, DockerComposeUpResult> {
+  return {
+    name: "docker.compose_up",
+    description:
+      "Start Docker Compose services using docker compose up through Orqent's controlled CLI adapter. Mutates local containers, networks, and possibly images. Does not execute arbitrary Docker commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        services: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+          description:
+            "Optional Docker Compose service names. Names with line breaks or leading '-' are ignored.",
+        },
+        detached: {
+          type: "boolean",
+          description:
+            "When true, run docker compose up --detach. Defaults to true.",
+        },
+        build: {
+          type: "boolean",
+          description:
+            "When true, include --build.",
+        },
+        removeOrphans: {
+          type: "boolean",
+          description:
+            "When true, include --remove-orphans.",
+        },
+      },
+      additionalProperties: false,
+    },
+    risk: "medium",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: 120_000,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: validateDockerComposeUpInput,
+    async execute(input, context) {
+      const args = buildDockerComposeUpArgs(input);
+
+      const result = await runCommand({
+        command: "docker",
+        args,
+        cwd: context.cwd,
+        timeoutMs: 120_000,
+        maxOutputChars: DOCKER_PS_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createDockerComposeUpError(result);
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          services: input.services,
+          detached: input.detached,
+          build: input.build,
+          removeOrphans: input.removeOrphans,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          command: {
+            command: "docker",
+            args,
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "docker",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
+function validateDockerComposeDownInput(
+  input: unknown,
+): ToolValidationResult<DockerComposeDownInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      removeOrphans: normalizeBoolean(input.removeOrphans, false),
+      removeVolumes: normalizeBoolean(input.removeVolumes, false),
+    },
+  };
+}
+
+function buildDockerComposeDownArgs(input: DockerComposeDownInput): string[] {
+  const args = [ "compose", "down" ];
+
+  if (input.removeOrphans) {
+    args.push("--remove-orphans");
+  }
+
+  if (input.removeVolumes) {
+    args.push("--volumes");
+  }
+
+  return args;
+}
+
+function createDockerComposeDownError(
+  result: CliCommandAdapterResult,
+): ToolExecutionResult<DockerComposeDownResult> {
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: "docker_compose_down_timed_out",
+        message: "docker compose down timed out.",
+        details: result,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "docker",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "docker_compose_down_failed",
+      message:
+        result.stderr.trim() ||
+        `docker compose down failed with exit code ${String(result.exitCode)}.`,
+      details: result,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "docker",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+export function createDockerComposeDownTool(
+  runCommand: CliCommandRunner = executeCliCommand,
+): ToolDefinition<DockerComposeDownInput, DockerComposeDownResult> {
+  return {
+    name: "docker.compose_down",
+    description:
+      "Stop and remove Docker Compose resources using docker compose down through Orqent's controlled CLI adapter. Mutates local containers and networks; optional volume removal is destructive. Does not execute arbitrary Docker commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        removeOrphans: {
+          type: "boolean",
+          description:
+            "When true, include --remove-orphans.",
+        },
+        removeVolumes: {
+          type: "boolean",
+          description:
+            "When true, include --volumes. This can delete named and anonymous volumes created by Compose.",
+        },
+      },
+      additionalProperties: false,
+    },
+    risk: "high",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: 120_000,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: validateDockerComposeDownInput,
+    async execute(input, context) {
+      const args = buildDockerComposeDownArgs(input);
+
+      const result = await runCommand({
+        command: "docker",
+        args,
+        cwd: context.cwd,
+        timeoutMs: 120_000,
+        maxOutputChars: DOCKER_PS_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createDockerComposeDownError(result);
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          removeOrphans: input.removeOrphans,
+          removeVolumes: input.removeVolumes,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          command: {
+            command: "docker",
+            args,
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "docker",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
+function validateDockerContainerActionInput(
+  input: unknown,
+): ToolValidationResult<DockerContainerActionInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const target = validateDockerTarget(input.target);
+
+  if (!target || target.startsWith("-")) {
+    return {
+      ok: false,
+      error:
+        "target must be a non-empty container name/id without line breaks and must not start with '-'.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      target,
+      timeoutSeconds: normalizeNullablePositiveInteger(
+        input.timeoutSeconds,
+        300,
+      ),
+    },
+  };
+}
+
+function normalizeNullablePositiveInteger(
+  value: unknown,
+  max: number,
+): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.min(max, Math.max(1, Math.round(value)));
+}
+
+function buildDockerContainerActionArgs({
+  action,
+  input,
+}: {
+  action: DockerContainerActionName;
+  input: DockerContainerActionInput;
+}): string[] {
+  const args: string[] = [ action ];
+
+  if (
+    input.timeoutSeconds !== null &&
+    (action === "stop" || action === "restart")
+  ) {
+    args.push("--time", String(input.timeoutSeconds));
+  }
+
+  args.push(input.target);
+
+  return args;
+}
+
+function createDockerContainerActionError({
+  action,
+  result,
+}: {
+  action: DockerContainerActionName;
+  result: CliCommandAdapterResult;
+}): ToolExecutionResult<DockerContainerActionResult> {
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: `docker_${action}_timed_out`,
+        message: `docker ${action} timed out.`,
+        details: result,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "docker",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: `docker_${action}_failed`,
+      message:
+        result.stderr.trim() ||
+        `docker ${action} failed with exit code ${String(result.exitCode)}.`,
+      details: result,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "docker",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+export function createDockerContainerActionTool({
+  action,
+  runCommand = executeCliCommand,
+}: {
+  action: DockerContainerActionName;
+  runCommand?: CliCommandRunner;
+}): ToolDefinition<DockerContainerActionInput, DockerContainerActionResult> {
+  const isRestart = action === "restart";
+
+  return {
+    name: `docker.${action}`,
+    description:
+      `Run docker ${action} for a specific container through Orqent's controlled CLI adapter. Mutates local container state. Does not execute arbitrary Docker commands.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          description:
+            "Docker container name or id. Must not contain line breaks or start with '-'.",
+        },
+        timeoutSeconds: {
+          type: "number",
+          description:
+            "Optional timeout in seconds for stop/restart. Ignored for start. Capped at 300.",
+        },
+      },
+      required: [ "target" ],
+      additionalProperties: false,
+    },
+    risk: isRestart ? "high" : "medium",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: 120_000,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: validateDockerContainerActionInput,
+    async execute(input, context) {
+      const args = buildDockerContainerActionArgs({
+        action,
+        input,
+      });
+
+      const result = await runCommand({
+        command: "docker",
+        args,
+        cwd: context.cwd,
+        timeoutMs: 120_000,
+        maxOutputChars: DOCKER_PS_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createDockerContainerActionError({
+          action,
+          result,
+        });
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          action,
+          target: input.target,
+          timeoutSeconds: input.timeoutSeconds,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          command: {
+            command: "docker",
+            args,
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "docker",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
+function validateDockerRmInput(
+  input: unknown,
+): ToolValidationResult<DockerRmInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const target = validateDockerTarget(input.target);
+
+  if (!target || target.startsWith("-")) {
+    return {
+      ok: false,
+      error:
+        "target must be a non-empty container name/id without line breaks and must not start with '-'.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      target,
+      force: normalizeBoolean(input.force, false),
+      removeVolumes: normalizeBoolean(input.removeVolumes, false),
+    },
+  };
+}
+
+function buildDockerRmArgs(input: DockerRmInput): string[] {
+  const args = [ "rm" ];
+
+  if (input.force) {
+    args.push("--force");
+  }
+
+  if (input.removeVolumes) {
+    args.push("--volumes");
+  }
+
+  args.push(input.target);
+
+  return args;
+}
+
+function createDockerRmError(
+  result: CliCommandAdapterResult,
+): ToolExecutionResult<DockerRmResult> {
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: "docker_rm_timed_out",
+        message: "docker rm timed out.",
+        details: result,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "docker",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "docker_rm_failed",
+      message:
+        result.stderr.trim() ||
+        `docker rm failed with exit code ${String(result.exitCode)}.`,
+      details: result,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "docker",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+export function createDockerRmTool(
+  runCommand: CliCommandRunner = executeCliCommand,
+): ToolDefinition<DockerRmInput, DockerRmResult> {
+  return {
+    name: "docker.rm",
+    description:
+      "Remove a Docker container using docker rm through Orqent's controlled CLI adapter. Destructive. Does not execute arbitrary Docker commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          description:
+            "Docker container name or id. Must not contain line breaks or start with '-'.",
+        },
+        force: {
+          type: "boolean",
+          description:
+            "When true, include --force to remove a running container.",
+        },
+        removeVolumes: {
+          type: "boolean",
+          description:
+            "When true, include --volumes to remove anonymous volumes associated with the container.",
+        },
+      },
+      required: [ "target" ],
+      additionalProperties: false,
+    },
+    risk: "high",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: 120_000,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: validateDockerRmInput,
+    async execute(input, context) {
+      const args = buildDockerRmArgs(input);
+
+      const result = await runCommand({
+        command: "docker",
+        args,
+        cwd: context.cwd,
+        timeoutMs: 120_000,
+        maxOutputChars: DOCKER_PS_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createDockerRmError(result);
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          target: input.target,
+          force: input.force,
+          removeVolumes: input.removeVolumes,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          command: {
+            command: "docker",
+            args,
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "docker",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
+function normalizeDockerExecCommand(value: unknown): string | null {
+  const command = typeof value === "string" ? value.trim() : "";
+
+  if (!command) {
+    return null;
+  }
+
+  if (/[\r\n]/.test(command)) {
+    return null;
+  }
+
+  if (command.startsWith("-")) {
+    return null;
+  }
+
+  return command;
+}
+
+function normalizeDockerExecArgs(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => !/[\r\n]/.test(item));
+}
+
+function normalizeDockerExecOptionalString(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  if (/[\r\n]/.test(normalized)) {
+    return null;
+  }
+
+  if (normalized.startsWith("-")) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizeDockerExecEnv(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const env: Record<string, string> = {};
+
+  for (const [ key, rawValue ] of Object.entries(value)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      continue;
+    }
+
+    if (typeof rawValue !== "string") {
+      continue;
+    }
+
+    if (/[\r\n]/.test(rawValue)) {
+      continue;
+    }
+
+    env[ key ] = rawValue;
+  }
+
+  return env;
+}
+
+function validateDockerExecInput(
+  input: unknown,
+): ToolValidationResult<DockerExecInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const target = validateDockerTarget(input.target);
+
+  if (!target || target.startsWith("-")) {
+    return {
+      ok: false,
+      error:
+        "target must be a non-empty container name/id without line breaks and must not start with '-'.",
+    };
+  }
+
+  const command = normalizeDockerExecCommand(input.command);
+
+  if (!command) {
+    return {
+      ok: false,
+      error:
+        "command must be a non-empty command without line breaks and must not start with '-'.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      target,
+      command,
+      args: normalizeDockerExecArgs(input.args),
+      workdir: normalizeDockerExecOptionalString(input.workdir),
+      user: normalizeDockerExecOptionalString(input.user),
+      env: normalizeDockerExecEnv(input.env),
+    },
+  };
+}
+
+function buildDockerExecArgs(input: DockerExecInput): string[] {
+  const args = [ "exec" ];
+
+  if (input.workdir) {
+    args.push("--workdir", input.workdir);
+  }
+
+  if (input.user) {
+    args.push("--user", input.user);
+  }
+
+  for (const [ key, value ] of Object.entries(input.env)) {
+    args.push("--env", `${key}=${value}`);
+  }
+
+  args.push(input.target, input.command, ...input.args);
+
+  return args;
+}
+
+function createDockerExecError(
+  result: CliCommandAdapterResult,
+): ToolExecutionResult<DockerExecResult> {
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: "docker_exec_timed_out",
+        message: "docker exec timed out.",
+        details: result,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "docker",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "docker_exec_failed",
+      message:
+        result.stderr.trim() ||
+        `docker exec failed with exit code ${String(result.exitCode)}.`,
+      details: result,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "docker",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+export function createDockerExecTool(
+  runCommand: CliCommandRunner = executeCliCommand,
+): ToolDefinition<DockerExecInput, DockerExecResult> {
+  return {
+    name: "docker.exec",
+    description:
+      "Execute a command inside a Docker container using docker exec through Orqent's controlled CLI adapter. High risk. Does not execute arbitrary host shell commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          description:
+            "Docker container name or id. Must not contain line breaks or start with '-'.",
+        },
+        command: {
+          type: "string",
+          description:
+            "Command to run inside the container. Must not contain line breaks or start with '-'.",
+        },
+        args: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+          description:
+            "Arguments passed to the command inside the container.",
+        },
+        workdir: {
+          type: "string",
+          description:
+            "Optional working directory inside the container. Must not contain line breaks or start with '-'.",
+        },
+        user: {
+          type: "string",
+          description:
+            "Optional user inside the container. Must not contain line breaks or start with '-'.",
+        },
+        env: {
+          type: "object",
+          description:
+            "Optional environment variables passed to docker exec. Invalid keys and values with line breaks are ignored.",
+        },
+      },
+      required: [ "target", "command" ],
+      additionalProperties: false,
+    },
+    risk: "high",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: 120_000,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: validateDockerExecInput,
+    async execute(input, context) {
+      const args = buildDockerExecArgs(input);
+
+      const result = await runCommand({
+        command: "docker",
+        args,
+        cwd: context.cwd,
+        timeoutMs: 120_000,
+        maxOutputChars: DOCKER_PS_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createDockerExecError(result);
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          target: input.target,
+          commandToRun: input.command,
+          argsToRun: input.args,
+          workdir: input.workdir,
+          user: input.user,
+          envKeys: Object.keys(input.env),
+          stdout: result.stdout,
+          stderr: result.stderr,
+          command: {
+            command: "docker",
+            args,
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "docker",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
 export function createDockerPsTool(
   runCommand: CliCommandRunner = executeCliCommand,
 ): ToolDefinition<DockerPsInput, DockerPsResult> {
@@ -1716,3 +3030,17 @@ export const dockerComposePsTool = createDockerComposePsTool();
 export const dockerImagesTool = createDockerImagesTool();
 export const dockerNetworksTool = createDockerNetworksTool();
 export const dockerVolumesTool = createDockerVolumesTool();
+export const dockerPullTool = createDockerPullTool();
+export const dockerComposeUpTool = createDockerComposeUpTool();
+export const dockerComposeDownTool = createDockerComposeDownTool();
+export const dockerStopTool = createDockerContainerActionTool({
+  action: "stop",
+});
+export const dockerStartTool = createDockerContainerActionTool({
+  action: "start",
+});
+export const dockerRestartTool = createDockerContainerActionTool({
+  action: "restart",
+});
+export const dockerRmTool = createDockerRmTool();
+export const dockerExecTool = createDockerExecTool();

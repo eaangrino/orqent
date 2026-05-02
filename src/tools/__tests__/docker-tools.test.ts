@@ -7,7 +7,18 @@ import {
   createDockerLogsTool,
   createDockerNetworksTool,
   createDockerPsTool,
+  createDockerPullTool,
   createDockerVolumesTool,
+  createDockerComposeUpTool,
+  createDockerComposeDownTool,
+  createDockerContainerActionTool,
+  createDockerRmTool,
+  createDockerExecTool,
+  type DockerExecResult,
+  type DockerRmResult,
+  type DockerContainerActionResult,
+  type DockerComposeDownResult,
+  type DockerComposeUpResult,
   type CliCommandRunner,
   type DockerComposePsResult,
   type DockerImagesResult,
@@ -15,6 +26,7 @@ import {
   type DockerLogsResult,
   type DockerNetworksResult,
   type DockerPsResult,
+  type DockerPullResult,
   type DockerVolumesResult,
 } from "../builtin/docker.js";
 import { defaultToolRegistry } from "../registry.js";
@@ -965,5 +977,1041 @@ describe("docker tools", () => {
 
     expect(result.error.code).toBe("docker_volumes_failed");
     expect(result.error.message).toBe("Cannot connect to the Docker daemon");
+  });
+
+  it("registra docker.pull en el registry por defecto", () => {
+    expect(defaultToolRegistry.has("docker.pull")).toBe(true);
+  });
+
+  it("docker.pull ejecuta docker pull mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "Status: Downloaded newer image for postgres:16\n",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerPullTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.pull",
+      input: {
+        image: "postgres:16",
+        platform: "linux/amd64",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "docker",
+        args: [
+          "pull",
+          "--platform",
+          "linux/amd64",
+          "postgres:16",
+        ],
+        cwd: "/tmp/project",
+        timeoutMs: 120_000,
+      }),
+    );
+
+    const dockerResult = result.result as DockerPullResult;
+
+    expect(dockerResult.image).toBe("postgres:16");
+    expect(dockerResult.platform).toBe("linux/amd64");
+    expect(dockerResult.stdout).toContain("Downloaded newer image");
+  });
+
+  it("docker.pull requiere confirmación", async () => {
+    const runCommand = vi.fn<CliCommandRunner>();
+    const registry = createToolRegistry([ createDockerPullTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.pull",
+      input: {
+        image: "postgres:16",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: false,
+        reason: "No descargar imagen ahora.",
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.pull to be denied.");
+    }
+
+    expect(result.error.code).toBe("tool_confirmation_denied");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("docker.pull rechaza image vacío o peligroso", async () => {
+    const registry = createToolRegistry([ createDockerPullTool() ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.pull",
+      input: {
+        image: "--all-tags",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.pull to fail.");
+    }
+
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "image must be a non-empty Docker image reference without line breaks and must not start with '-'.",
+    );
+  });
+
+  it("docker.pull devuelve error controlado cuando docker falla", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        exitCode: 1,
+        stderr: "Error response from daemon: pull access denied",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerPullTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.pull",
+      input: {
+        image: "private/missing:latest",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.pull to fail.");
+    }
+
+    expect(result.error.code).toBe("docker_pull_failed");
+    expect(result.error.message).toBe(
+      "Error response from daemon: pull access denied",
+    );
+  });
+
+  it("registra docker.compose_up en el registry por defecto", () => {
+    expect(defaultToolRegistry.has("docker.compose_up")).toBe(true);
+  });
+
+  it("docker.compose_up ejecuta docker compose up mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "Container orqent-db-1 Started\n",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerComposeUpTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_up",
+      input: {
+        services: [ "db" ],
+        detached: true,
+        build: true,
+        removeOrphans: true,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "docker",
+        args: [
+          "compose",
+          "up",
+          "--detach",
+          "--build",
+          "--remove-orphans",
+          "db",
+        ],
+        cwd: "/tmp/project",
+        timeoutMs: 120_000,
+      }),
+    );
+
+    const dockerResult = result.result as DockerComposeUpResult;
+
+    expect(dockerResult.services).toEqual([ "db" ]);
+    expect(dockerResult.detached).toBe(true);
+    expect(dockerResult.build).toBe(true);
+    expect(dockerResult.removeOrphans).toBe(true);
+    expect(dockerResult.stdout).toContain("Started");
+  });
+
+  it("docker.compose_up requiere confirmación", async () => {
+    const runCommand = vi.fn<CliCommandRunner>();
+    const registry = createToolRegistry([ createDockerComposeUpTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_up",
+      input: {
+        services: [ "db" ],
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: false,
+        reason: "No levantar servicios ahora.",
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.compose_up to be denied.");
+    }
+
+    expect(result.error.code).toBe("tool_confirmation_denied");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("docker.compose_up ignora servicios peligrosos que empiezan por guion", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "ok\n",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerComposeUpTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_up",
+      input: {
+        services: [ "--profile", "db" ],
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          "compose",
+          "up",
+          "--detach",
+          "db",
+        ],
+      }),
+    );
+  });
+
+  it("docker.compose_up devuelve error controlado cuando docker falla", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        exitCode: 1,
+        stderr: "no configuration file provided",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerComposeUpTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_up",
+      input: {},
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.compose_up to fail.");
+    }
+
+    expect(result.error.code).toBe("docker_compose_up_failed");
+    expect(result.error.message).toBe("no configuration file provided");
+  });
+
+  it("registra docker.compose_down en el registry por defecto", () => {
+    expect(defaultToolRegistry.has("docker.compose_down")).toBe(true);
+  });
+
+  it("docker.compose_down ejecuta docker compose down mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "Container orqent-db-1 Removed\nNetwork orqent_default Removed\n",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerComposeDownTool(runCommand),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_down",
+      input: {
+        removeOrphans: true,
+        removeVolumes: true,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "docker",
+        args: [
+          "compose",
+          "down",
+          "--remove-orphans",
+          "--volumes",
+        ],
+        cwd: "/tmp/project",
+        timeoutMs: 120_000,
+      }),
+    );
+
+    const dockerResult = result.result as DockerComposeDownResult;
+
+    expect(dockerResult.removeOrphans).toBe(true);
+    expect(dockerResult.removeVolumes).toBe(true);
+    expect(dockerResult.stdout).toContain("Removed");
+  });
+
+  it("docker.compose_down requiere confirmación", async () => {
+    const runCommand = vi.fn<CliCommandRunner>();
+    const registry = createToolRegistry([
+      createDockerComposeDownTool(runCommand),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_down",
+      input: {
+        removeVolumes: true,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: false,
+        reason: "No bajar compose ahora.",
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.compose_down to be denied.");
+    }
+
+    expect(result.error.code).toBe("tool_confirmation_denied");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("docker.compose_down sin flags destructivos usa comando mínimo", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "ok\n",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerComposeDownTool(runCommand),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_down",
+      input: {},
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          "compose",
+          "down",
+        ],
+      }),
+    );
+  });
+
+  it("docker.compose_down devuelve error controlado cuando docker falla", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        exitCode: 1,
+        stderr: "no configuration file provided",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerComposeDownTool(runCommand),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.compose_down",
+      input: {},
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.compose_down to fail.");
+    }
+
+    expect(result.error.code).toBe("docker_compose_down_failed");
+    expect(result.error.message).toBe("no configuration file provided");
+  });
+
+  it("registra docker.stop, docker.start y docker.restart en el registry por defecto", () => {
+    expect(defaultToolRegistry.has("docker.stop")).toBe(true);
+    expect(defaultToolRegistry.has("docker.start")).toBe(true);
+    expect(defaultToolRegistry.has("docker.restart")).toBe(true);
+  });
+
+  it("docker.stop ejecuta docker stop mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "postgres_local\n",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerContainerActionTool({
+        action: "stop",
+        runCommand,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.stop",
+      input: {
+        target: "postgres_local",
+        timeoutSeconds: 15,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "docker",
+        args: [
+          "stop",
+          "--time",
+          "15",
+          "postgres_local",
+        ],
+        cwd: "/tmp/project",
+        timeoutMs: 120_000,
+      }),
+    );
+
+    const dockerResult = result.result as DockerContainerActionResult;
+
+    expect(dockerResult.action).toBe("stop");
+    expect(dockerResult.target).toBe("postgres_local");
+    expect(dockerResult.timeoutSeconds).toBe(15);
+  });
+
+  it("docker.start ejecuta docker start sin timeout flag", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "postgres_local\n",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerContainerActionTool({
+        action: "start",
+        runCommand,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.start",
+      input: {
+        target: "postgres_local",
+        timeoutSeconds: 15,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          "start",
+          "postgres_local",
+        ],
+      }),
+    );
+  });
+
+  it("docker.restart ejecuta docker restart mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "postgres_local\n",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerContainerActionTool({
+        action: "restart",
+        runCommand,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.restart",
+      input: {
+        target: "postgres_local",
+        timeoutSeconds: 20,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          "restart",
+          "--time",
+          "20",
+          "postgres_local",
+        ],
+      }),
+    );
+  });
+
+  it("docker.stop/start/restart requieren confirmación", async () => {
+    const runCommand = vi.fn<CliCommandRunner>();
+    const registry = createToolRegistry([
+      createDockerContainerActionTool({
+        action: "stop",
+        runCommand,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.stop",
+      input: {
+        target: "postgres_local",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: false,
+        reason: "No detener contenedor ahora.",
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.stop to be denied.");
+    }
+
+    expect(result.error.code).toBe("tool_confirmation_denied");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("docker.stop rechaza target peligroso", async () => {
+    const registry = createToolRegistry([
+      createDockerContainerActionTool({
+        action: "stop",
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.stop",
+      input: {
+        target: "--all",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.stop to fail.");
+    }
+
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "target must be a non-empty container name/id without line breaks and must not start with '-'.",
+    );
+  });
+
+  it("docker.restart devuelve error controlado cuando docker falla", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        exitCode: 1,
+        stderr: "No such container: missing",
+      }),
+    );
+
+    const registry = createToolRegistry([
+      createDockerContainerActionTool({
+        action: "restart",
+        runCommand,
+      }),
+    ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.restart",
+      input: {
+        target: "missing",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.restart to fail.");
+    }
+
+    expect(result.error.code).toBe("docker_restart_failed");
+    expect(result.error.message).toBe("No such container: missing");
+  });
+
+  it("registra docker.rm en el registry por defecto", () => {
+    expect(defaultToolRegistry.has("docker.rm")).toBe(true);
+  });
+
+  it("docker.rm ejecuta docker rm mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "postgres_local\n",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerRmTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.rm",
+      input: {
+        target: "postgres_local",
+        force: true,
+        removeVolumes: true,
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "docker",
+        args: [
+          "rm",
+          "--force",
+          "--volumes",
+          "postgres_local",
+        ],
+        cwd: "/tmp/project",
+        timeoutMs: 120_000,
+      }),
+    );
+
+    const dockerResult = result.result as DockerRmResult;
+
+    expect(dockerResult.target).toBe("postgres_local");
+    expect(dockerResult.force).toBe(true);
+    expect(dockerResult.removeVolumes).toBe(true);
+  });
+
+  it("docker.rm requiere confirmación", async () => {
+    const runCommand = vi.fn<CliCommandRunner>();
+    const registry = createToolRegistry([ createDockerRmTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.rm",
+      input: {
+        target: "postgres_local",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: false,
+        reason: "No eliminar contenedor ahora.",
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.rm to be denied.");
+    }
+
+    expect(result.error.code).toBe("tool_confirmation_denied");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("docker.rm rechaza target peligroso", async () => {
+    const registry = createToolRegistry([ createDockerRmTool() ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.rm",
+      input: {
+        target: "--force",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.rm to fail.");
+    }
+
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "target must be a non-empty container name/id without line breaks and must not start with '-'.",
+    );
+  });
+
+  it("docker.rm devuelve error controlado cuando docker falla", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        exitCode: 1,
+        stderr: "No such container: missing",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerRmTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.rm",
+      input: {
+        target: "missing",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.rm to fail.");
+    }
+
+    expect(result.error.code).toBe("docker_rm_failed");
+    expect(result.error.message).toBe("No such container: missing");
+  });
+
+  it("registra docker.exec en el registry por defecto", () => {
+    expect(defaultToolRegistry.has("docker.exec")).toBe(true);
+  });
+
+  it("docker.exec ejecuta docker exec mediante el adapter CLI controlado", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        stdout: "node version\n",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerExecTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.exec",
+      input: {
+        target: "app_container",
+        command: "node",
+        args: [ "--version" ],
+        workdir: "/app",
+        user: "node",
+        env: {
+          NODE_ENV: "test",
+          "INVALID-KEY": "ignored",
+        },
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "docker",
+        args: [
+          "exec",
+          "--workdir",
+          "/app",
+          "--user",
+          "node",
+          "--env",
+          "NODE_ENV=test",
+          "app_container",
+          "node",
+          "--version",
+        ],
+        cwd: "/tmp/project",
+        timeoutMs: 120_000,
+      }),
+    );
+
+    const dockerResult = result.result as DockerExecResult;
+
+    expect(dockerResult.target).toBe("app_container");
+    expect(dockerResult.commandToRun).toBe("node");
+    expect(dockerResult.argsToRun).toEqual([ "--version" ]);
+    expect(dockerResult.workdir).toBe("/app");
+    expect(dockerResult.user).toBe("node");
+    expect(dockerResult.envKeys).toEqual([ "NODE_ENV" ]);
+  });
+
+  it("docker.exec requiere confirmación", async () => {
+    const runCommand = vi.fn<CliCommandRunner>();
+    const registry = createToolRegistry([ createDockerExecTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.exec",
+      input: {
+        target: "app_container",
+        command: "node",
+        args: [ "--version" ],
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: false,
+        reason: "No ejecutar comandos dentro del contenedor ahora.",
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.exec to be denied.");
+    }
+
+    expect(result.error.code).toBe("tool_confirmation_denied");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("docker.exec rechaza target peligroso", async () => {
+    const registry = createToolRegistry([ createDockerExecTool() ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.exec",
+      input: {
+        target: "--privileged",
+        command: "sh",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.exec to fail.");
+    }
+
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "target must be a non-empty container name/id without line breaks and must not start with '-'.",
+    );
+  });
+
+  it("docker.exec rechaza command peligroso", async () => {
+    const registry = createToolRegistry([ createDockerExecTool() ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.exec",
+      input: {
+        target: "app_container",
+        command: "--help",
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.exec to fail.");
+    }
+
+    expect(result.error.code).toBe("invalid_tool_input");
+    expect(result.error.message).toBe(
+      "command must be a non-empty command without line breaks and must not start with '-'.",
+    );
+  });
+
+  it("docker.exec devuelve error controlado cuando docker falla", async () => {
+    const runCommand = vi.fn<CliCommandRunner>().mockResolvedValue(
+      createCliResult({
+        exitCode: 1,
+        stderr: "No such container: missing",
+      }),
+    );
+
+    const registry = createToolRegistry([ createDockerExecTool(runCommand) ]);
+
+    const result = await executeTool({
+      registry,
+      toolName: "docker.exec",
+      input: {
+        target: "missing",
+        command: "node",
+        args: [ "--version" ],
+      },
+      sessionId: "session-test",
+      cwd: "/tmp/project",
+      confirmToolExecution: async () => ({
+        allowed: true,
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected docker.exec to fail.");
+    }
+
+    expect(result.error.code).toBe("docker_exec_failed");
+    expect(result.error.message).toBe("No such container: missing");
   });
 });
