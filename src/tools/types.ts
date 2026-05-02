@@ -8,7 +8,9 @@ export type ToolPermission =
   | "agents:read"
   | "agents:write"
   | "mcp:read"
-  | "mcp:write";
+  | "mcp:write"
+  | "skills:read"
+  | "skills:write";
 
 export type ToolJsonSchema = {
   type: "object";

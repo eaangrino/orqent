@@ -45,6 +45,12 @@ import {
   buildMcpServerCatalogPrompt,
   listMcpServers,
 } from "./extensibility/mcp/index.js";
+import {
+  buildActiveSkillsPrompt,
+  buildSkillCatalogPrompt,
+  listSkillDefinitions,
+  resolveActiveSkillsForPrompt,
+} from "./extensibility/skills/index.js";
 import { McpServersScreen } from "./screens/mcp-servers.js";
 
 const MAX_TOOL_CALL_ROUNDS_PER_PROMPT = 10;
@@ -595,6 +601,11 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
       });
 
       const agentDefinitions = await listAgentDefinitions();
+      const skillDefinitions = await listSkillDefinitions();
+      const activeSkillSelections = resolveActiveSkillsForPrompt({
+        prompt,
+        skills: skillDefinitions,
+      });
       const mcpServers = await listMcpServers();
 
       const effectiveSystemPrompt = [
@@ -603,6 +614,12 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
         buildRuntimeContextPrompt(),
         "",
         buildAgentCatalogPrompt(agentDefinitions),
+        "",
+        buildSkillCatalogPrompt(skillDefinitions),
+        "",
+        buildActiveSkillsPrompt(
+          activeSkillSelections.map((selection) => selection.skill),
+        ),
         "",
         buildMcpServerCatalogPrompt(mcpServers),
         "",

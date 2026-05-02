@@ -85,6 +85,12 @@ function assertValidToolName(name: string): void {
   }
 }
 
+import {
+  skillDeleteTool,
+  skillListTool,
+  skillUpsertTool,
+} from "./builtin/skills.js";
+
 export class ToolRegistry {
   private readonly tools = new Map<string, AnyToolDefinition>();
 
@@ -175,6 +181,9 @@ export const builtinTools: AnyToolDefinition[] = [
   mcpUpsertServerTool,
   mcpDeleteServerTool,
   mcpCallToolTool,
+  skillListTool,
+  skillUpsertTool,
+  skillDeleteTool,
   nodeVersionTool,
   npmVersionTool,
   npmScriptsTool,
