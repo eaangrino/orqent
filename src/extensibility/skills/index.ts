@@ -4,3 +4,6 @@ export * from "./registry.js";
 export * from "./prompt.js";
 export * from "./activation.js";
 export * from "./mention.js";
+export * from "./markdown.js";
+export * from "./markdown-loader.js";
+export * from "./sources.js";

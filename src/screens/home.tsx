@@ -10,7 +10,7 @@ import { SelectableList } from "../components/selectable-list.js";
 import { MultilineTextInput } from "../components/multiline-text-input.js";
 import {
   getSkillMentionSuggestions,
-  listSkillDefinitions,
+  listAvailableSkillDefinitions,
   replaceActiveSkillMention,
   type SkillDefinition,
   type SkillMentionSuggestion,
@@ -151,7 +151,9 @@ export function HomeScreen({
     let isCancelled = false;
 
     async function loadSkills() {
-      const nextSkills = await listSkillDefinitions();
+      const nextSkills = await listAvailableSkillDefinitions({
+        cwd: process.cwd(),
+      });
 
       if (!isCancelled) {
         setSkills(nextSkills);

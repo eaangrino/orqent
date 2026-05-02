@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import {
-  listSkillDefinitions,
+  listAvailableSkillDefinitions,
   type SkillDefinition,
 } from "../extensibility/skills/index.js";
 
@@ -47,7 +47,9 @@ export function SkillsScreen({ onBack }: SkillsScreenProps) {
       setError(null);
 
       try {
-        const nextSkills = await listSkillDefinitions();
+        const nextSkills = await listAvailableSkillDefinitions({
+          cwd: process.cwd(),
+        });
 
         if (!isCancelled) {
           setSkills(nextSkills);

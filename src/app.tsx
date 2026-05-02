@@ -48,7 +48,7 @@ import {
 import {
   buildActiveSkillsPrompt,
   buildSkillCatalogPrompt,
-  listSkillDefinitions,
+  listAvailableSkillDefinitions,
   resolveActiveSkillsForPrompt,
 } from "./extensibility/skills/index.js";
 import { McpServersScreen } from "./screens/mcp-servers.js";
@@ -602,7 +602,9 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
       });
 
       const agentDefinitions = await listAgentDefinitions();
-      const skillDefinitions = await listSkillDefinitions();
+      const skillDefinitions = await listAvailableSkillDefinitions({
+        cwd: process.cwd(),
+      });
       const activeSkillSelections = resolveActiveSkillsForPrompt({
         prompt,
         skills: skillDefinitions,
