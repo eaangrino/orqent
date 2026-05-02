@@ -1,3 +1,6 @@
+> [!WARNING]
+> Este proyecto está en una fase temprana y es propenso a fallos o comportamientos inestables. Es un hobby de práctica enfocado en aprender y comprender cómo usar un modelo de forma local y lograr que controle tools según sus especificaciones.
+
 <p align="center">
   <img src="./src/assets/cover_logo.svg" alt="Logo del proyecto" width="620" />
 </p>

@@ -1,3 +1,6 @@
+> [!WARNING]
+> This project is in an early stage and is likely to have bugs or unstable behavior. It is a practice hobby project focused on learning and understanding how to run a model locally and have it control tools according to their specifications.
+
 <p align="center">
   <img src="./src/assets/cover_logo.svg" alt="Logo del proyecto" width="620" />
 </p>
