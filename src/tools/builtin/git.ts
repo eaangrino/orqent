@@ -159,12 +159,87 @@ export type GitRemotesResult = {
   outputTruncated: boolean;
 };
 
+export type GitCheckoutInput = {
+  target: string;
+  createBranch: string | null;
+  detach: boolean;
+};
+
+export type GitSwitchInput = {
+  branch: string;
+  create: boolean;
+  track: boolean;
+};
+
+export type GitAddInput = {
+  paths: string[];
+};
+
+export type GitCommitInput = {
+  message: string;
+  allowEmpty: boolean;
+};
+
+export type GitCloneInput = {
+  repositoryUrl: string;
+  directory: string | null;
+  branch: string | null;
+  depth: number | null;
+  singleBranch: boolean;
+};
+
+export type GitFetchInput = {
+  remote: string | null;
+  refspec: string | null;
+  prune: boolean;
+  tags: boolean;
+};
+
+export type GitPullInput = {
+  remote: string | null;
+  branch: string | null;
+  rebase: boolean;
+  ffOnly: boolean;
+};
+
+export type GitPushInput = {
+  remote: string | null;
+  branch: string | null;
+  setUpstream: boolean;
+  forceWithLease: boolean;
+};
+
+export type GitMutatingOperation =
+  | "clone"
+  | "fetch"
+  | "pull"
+  | "checkout"
+  | "switch"
+  | "add"
+  | "commit"
+  | "push";
+
+export type GitMutatingResult = {
+  cwd: string;
+  operation: GitMutatingOperation;
+  stdout: string;
+  stderr: string;
+  command: {
+    command: string;
+    args: string[];
+  };
+  durationMs: number;
+  outputTruncated: boolean;
+};
+
 export type GitCliCommandRunner = (
   input: CliCommandAdapterInput,
 ) => Promise<CliCommandAdapterResult>;
 
 const GIT_STATUS_TIMEOUT_MS = 10_000;
 const GIT_STATUS_MAX_OUTPUT_CHARS = 64_000;
+const GIT_MUTATION_TIMEOUT_MS = 120_000;
+const GIT_MUTATION_MAX_OUTPUT_CHARS = 64_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1387,9 +1462,996 @@ export function createGitStatusTool(
   };
 }
 
+function sanitizeGitOutput(value: string): string {
+  return value.replace(
+    /(https?:\/\/)([^/@\s]+)@/gi,
+    "$1redacted@",
+  );
+}
+
+function sanitizeGitCliResult(
+  result: CliCommandAdapterResult,
+): CliCommandAdapterResult {
+  return {
+    ...result,
+    args: result.args.map(sanitizeGitOutput),
+    stdout: sanitizeGitOutput(result.stdout),
+    stderr: sanitizeGitOutput(result.stderr),
+  };
+}
+
+function hasEmbeddedHttpCredentials(value: string): boolean {
+  try {
+    const url = new URL(value);
+
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      Boolean(url.username || url.password)
+    );
+  } catch {
+    return /https?:\/\/[^/\s@]+@/i.test(value);
+  }
+}
+
+function normalizeRequiredGitArgument(
+  value: unknown,
+  fieldName: string,
+): ToolValidationResult<string> {
+  if (typeof value !== "string" || !value.trim()) {
+    return {
+      ok: false,
+      error: `${fieldName} must be a non-empty string without line breaks and must not start with '-'.`,
+    };
+  }
+
+  const normalized = value.trim();
+
+  if (/[\r\n]/.test(normalized) || normalized.startsWith("-")) {
+    return {
+      ok: false,
+      error: `${fieldName} must be a non-empty string without line breaks and must not start with '-'.`,
+    };
+  }
+
+  return {
+    ok: true,
+    input: normalized,
+  };
+}
+
+function normalizeOptionalGitArgument(
+  value: unknown,
+  fieldName: string,
+): ToolValidationResult<string | null> {
+  if (value === undefined || value === null) {
+    return {
+      ok: true,
+      input: null,
+    };
+  }
+
+  if (typeof value !== "string") {
+    return {
+      ok: false,
+      error: `${fieldName} must be a string without line breaks and must not start with '-' when provided.`,
+    };
+  }
+
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return {
+      ok: true,
+      input: null,
+    };
+  }
+
+  if (/[\r\n]/.test(normalized) || normalized.startsWith("-")) {
+    return {
+      ok: false,
+      error: `${fieldName} must be a string without line breaks and must not start with '-' when provided.`,
+    };
+  }
+
+  return {
+    ok: true,
+    input: normalized,
+  };
+}
+
+function normalizeOptionalDepth(value: unknown): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  return normalizePositiveInteger(value, 1, 100_000);
+}
+
+function createGitMutatingError(
+  operation: GitMutatingOperation,
+  result: CliCommandAdapterResult,
+): ToolExecutionResult<GitMutatingResult> {
+  const sanitizedResult = sanitizeGitCliResult(result);
+
+  if (result.timedOut) {
+    return {
+      ok: false,
+      error: {
+        code: `git_${operation}_timed_out`,
+        message: `git ${operation} timed out.`,
+        details: sanitizedResult,
+      },
+      metadata: {
+        adapter: "cli",
+        command: "git",
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: `git_${operation}_failed`,
+      message:
+        sanitizeGitOutput(result.stderr.trim()) ||
+        `git ${operation} failed with exit code ${String(result.exitCode)}.`,
+      details: sanitizedResult,
+    },
+    metadata: {
+      adapter: "cli",
+      command: "git",
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+    },
+  };
+}
+
+function validateGitCloneInput(
+  input: unknown,
+): ToolValidationResult<GitCloneInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const repositoryUrl = normalizeRequiredGitArgument(
+    input.repositoryUrl,
+    "repositoryUrl",
+  );
+
+  if (!repositoryUrl.ok) {
+    return repositoryUrl;
+  }
+
+  if (hasEmbeddedHttpCredentials(repositoryUrl.input)) {
+    return {
+      ok: false,
+      error:
+        "repositoryUrl must not include embedded HTTP credentials. Use configured Git credentials or SSH instead.",
+    };
+  }
+
+  const directory = normalizeOptionalGitArgument(input.directory, "directory");
+
+  if (!directory.ok) {
+    return directory;
+  }
+
+  const branch = normalizeOptionalGitArgument(input.branch, "branch");
+
+  if (!branch.ok) {
+    return branch;
+  }
+
+  return {
+    ok: true,
+    input: {
+      repositoryUrl: repositoryUrl.input,
+      directory: directory.input,
+      branch: branch.input,
+      depth: normalizeOptionalDepth(input.depth),
+      singleBranch: normalizeBoolean(input.singleBranch, false),
+    },
+  };
+}
+
+function buildGitCloneArgs(input: GitCloneInput): string[] {
+  const args = [ "clone" ];
+
+  if (input.depth !== null) {
+    args.push("--depth", String(input.depth));
+  }
+
+  if (input.singleBranch) {
+    args.push("--single-branch");
+  }
+
+  if (input.branch) {
+    args.push("--branch", input.branch);
+  }
+
+  args.push("--", input.repositoryUrl);
+
+  if (input.directory) {
+    args.push(input.directory);
+  }
+
+  return args;
+}
+
+function validateGitFetchInput(
+  input: unknown,
+): ToolValidationResult<GitFetchInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const remote = normalizeOptionalGitArgument(input.remote, "remote");
+
+  if (!remote.ok) {
+    return remote;
+  }
+
+  const refspec = normalizeOptionalGitArgument(input.refspec, "refspec");
+
+  if (!refspec.ok) {
+    return refspec;
+  }
+
+  return {
+    ok: true,
+    input: {
+      remote: remote.input,
+      refspec: refspec.input,
+      prune: normalizeBoolean(input.prune, false),
+      tags: normalizeBoolean(input.tags, false),
+    },
+  };
+}
+
+function buildGitFetchArgs(input: GitFetchInput): string[] {
+  const args = [ "fetch" ];
+
+  if (input.prune) {
+    args.push("--prune");
+  }
+
+  if (input.tags) {
+    args.push("--tags");
+  }
+
+  if (input.remote) {
+    args.push(input.remote);
+  }
+
+  if (input.refspec) {
+    args.push(input.refspec);
+  }
+
+  return args;
+}
+
+function validateGitPullInput(
+  input: unknown,
+): ToolValidationResult<GitPullInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const remote = normalizeOptionalGitArgument(input.remote, "remote");
+
+  if (!remote.ok) {
+    return remote;
+  }
+
+  const branch = normalizeOptionalGitArgument(input.branch, "branch");
+
+  if (!branch.ok) {
+    return branch;
+  }
+
+  return {
+    ok: true,
+    input: {
+      remote: remote.input,
+      branch: branch.input,
+      rebase: normalizeBoolean(input.rebase, false),
+      ffOnly: normalizeBoolean(input.ffOnly, true),
+    },
+  };
+}
+
+function buildGitPullArgs(input: GitPullInput): string[] {
+  const args = [ "pull" ];
+
+  if (input.rebase) {
+    args.push("--rebase");
+  } else if (input.ffOnly) {
+    args.push("--ff-only");
+  }
+
+  if (input.remote) {
+    args.push(input.remote);
+  }
+
+  if (input.branch) {
+    args.push(input.branch);
+  }
+
+  return args;
+}
+
+function validateGitCheckoutInput(
+  input: unknown,
+): ToolValidationResult<GitCheckoutInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const target = normalizeRequiredGitArgument(input.target, "target");
+
+  if (!target.ok) {
+    return target;
+  }
+
+  const createBranch = normalizeOptionalGitArgument(
+    input.createBranch,
+    "createBranch",
+  );
+
+  if (!createBranch.ok) {
+    return createBranch;
+  }
+
+  return {
+    ok: true,
+    input: {
+      target: target.input,
+      createBranch: createBranch.input,
+      detach: normalizeBoolean(input.detach, false),
+    },
+  };
+}
+
+function buildGitCheckoutArgs(input: GitCheckoutInput): string[] {
+  if (input.createBranch) {
+    return [ "checkout", "-b", input.createBranch, input.target ];
+  }
+
+  if (input.detach) {
+    return [ "checkout", "--detach", input.target ];
+  }
+
+  return [ "checkout", input.target ];
+}
+
+function validateGitSwitchInput(
+  input: unknown,
+): ToolValidationResult<GitSwitchInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const branch = normalizeRequiredGitArgument(input.branch, "branch");
+
+  if (!branch.ok) {
+    return branch;
+  }
+
+  return {
+    ok: true,
+    input: {
+      branch: branch.input,
+      create: normalizeBoolean(input.create, false),
+      track: normalizeBoolean(input.track, false),
+    },
+  };
+}
+
+function buildGitSwitchArgs(input: GitSwitchInput): string[] {
+  const args = [ "switch" ];
+
+  if (input.create) {
+    args.push("--create");
+  }
+
+  if (input.track) {
+    args.push("--track");
+  }
+
+  args.push(input.branch);
+
+  return args;
+}
+
+function normalizeGitAddPaths(value: unknown): ToolValidationResult<string[]> {
+  if (!Array.isArray(value)) {
+    return {
+      ok: false,
+      error: "paths must be a non-empty array of path strings.",
+    };
+  }
+
+  const paths = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (paths.length === 0) {
+    return {
+      ok: false,
+      error: "paths must be a non-empty array of path strings.",
+    };
+  }
+
+  if (paths.some((path) => /[\r\n]/.test(path) || path.startsWith("-"))) {
+    return {
+      ok: false,
+      error:
+        "paths must not contain line breaks and must not start with '-'.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: paths,
+  };
+}
+
+function validateGitAddInput(
+  input: unknown,
+): ToolValidationResult<GitAddInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const paths = normalizeGitAddPaths(input.paths);
+
+  if (!paths.ok) {
+    return paths;
+  }
+
+  return {
+    ok: true,
+    input: {
+      paths: paths.input,
+    },
+  };
+}
+
+function buildGitAddArgs(input: GitAddInput): string[] {
+  return [ "add", "--", ...input.paths ];
+}
+
+function validateGitCommitInput(
+  input: unknown,
+): ToolValidationResult<GitCommitInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  if (typeof input.message !== "string" || !input.message.trim()) {
+    return {
+      ok: false,
+      error: "message must be a non-empty string.",
+    };
+  }
+
+  const message = input.message.trim();
+
+  if (message.includes("\0")) {
+    return {
+      ok: false,
+      error: "message must not contain null bytes.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      message,
+      allowEmpty: normalizeBoolean(input.allowEmpty, false),
+    },
+  };
+}
+
+function buildGitCommitArgs(input: GitCommitInput): string[] {
+  const args = [ "commit", "-m", input.message ];
+
+  if (input.allowEmpty) {
+    args.push("--allow-empty");
+  }
+
+  return args;
+}
+
+function validateGitPushInput(
+  input: unknown,
+): ToolValidationResult<GitPushInput> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: "Input must be an object.",
+    };
+  }
+
+  const remote = normalizeOptionalGitArgument(input.remote, "remote");
+
+  if (!remote.ok) {
+    return remote;
+  }
+
+  const branch = normalizeOptionalGitArgument(input.branch, "branch");
+
+  if (!branch.ok) {
+    return branch;
+  }
+
+  const setUpstream = normalizeBoolean(input.setUpstream, false);
+
+  if (branch.input && !remote.input) {
+    return {
+      ok: false,
+      error: "branch requires remote when provided.",
+    };
+  }
+
+  if (setUpstream && (!remote.input || !branch.input)) {
+    return {
+      ok: false,
+      error: "setUpstream requires both remote and branch.",
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      remote: remote.input,
+      branch: branch.input,
+      setUpstream,
+      forceWithLease: normalizeBoolean(input.forceWithLease, false),
+    },
+  };
+}
+
+function buildGitPushArgs(input: GitPushInput): string[] {
+  const args = [ "push" ];
+
+  if (input.setUpstream) {
+    args.push("--set-upstream");
+  }
+
+  if (input.forceWithLease) {
+    args.push("--force-with-lease");
+  }
+
+  if (input.remote) {
+    args.push(input.remote);
+  }
+
+  if (input.branch) {
+    args.push(input.branch);
+  }
+
+  return args;
+}
+
+function createGitMutatingTool<TInput>(
+  config: {
+    name: string;
+    operation: GitMutatingOperation;
+    description: string;
+    inputSchema: ToolDefinition<TInput, GitMutatingResult>[ "inputSchema" ];
+    validateInput: (input: unknown) => ToolValidationResult<TInput>;
+    buildArgs: (input: TInput) => string[];
+  },
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<TInput, GitMutatingResult> {
+  return {
+    name: config.name,
+    description: config.description,
+    inputSchema: config.inputSchema,
+    risk: "high",
+    permissions: [ "shell:execute" ],
+    requiresConfirmation: true,
+    isReadOnly: false,
+    timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+    retry: {
+      maxAttempts: 1,
+      delayMs: 0,
+    },
+    validateInput: config.validateInput,
+    async execute(input, context) {
+      const args = config.buildArgs(input);
+
+      const result = await runCommand({
+        command: "git",
+        args,
+        cwd: context.cwd,
+        timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+        maxOutputChars: GIT_MUTATION_MAX_OUTPUT_CHARS,
+        signal: context.signal,
+      });
+
+      if (result.exitCode !== 0) {
+        return createGitMutatingError(config.operation, result);
+      }
+
+      return {
+        ok: true,
+        result: {
+          cwd: context.cwd,
+          operation: config.operation,
+          stdout: sanitizeGitOutput(result.stdout),
+          stderr: sanitizeGitOutput(result.stderr),
+          command: {
+            command: "git",
+            args: args.map(sanitizeGitOutput),
+          },
+          durationMs: result.durationMs,
+          outputTruncated: result.truncated,
+        },
+        metadata: {
+          adapter: "cli",
+          command: "git",
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+        },
+      };
+    },
+  };
+}
+
+export function createGitCloneTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitCloneInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.clone",
+      operation: "clone",
+      description:
+        "Clone a Git repository using git clone through Orqent's controlled CLI adapter. Mutates the filesystem and may use network access. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repositoryUrl: {
+            type: "string",
+            description:
+              "Repository URL to clone. Must not contain embedded HTTP credentials.",
+          },
+          directory: {
+            type: "string",
+            description:
+              "Optional target directory relative to the current working directory.",
+          },
+          branch: {
+            type: "string",
+            description:
+              "Optional branch or tag to checkout during clone.",
+          },
+          depth: {
+            type: "number",
+            description:
+              "Optional shallow clone depth.",
+          },
+          singleBranch: {
+            type: "boolean",
+            description:
+              "When true, pass --single-branch.",
+          },
+        },
+        required: [ "repositoryUrl" ],
+        additionalProperties: false,
+      },
+      validateInput: validateGitCloneInput,
+      buildArgs: buildGitCloneArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitFetchTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitFetchInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.fetch",
+      operation: "fetch",
+      description:
+        "Fetch Git refs using git fetch through Orqent's controlled CLI adapter. Updates local Git metadata and may use network access. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          remote: {
+            type: "string",
+            description:
+              "Optional remote name. Defaults to Git's configured default.",
+          },
+          refspec: {
+            type: "string",
+            description:
+              "Optional refspec to fetch.",
+          },
+          prune: {
+            type: "boolean",
+            description:
+              "When true, pass --prune.",
+          },
+          tags: {
+            type: "boolean",
+            description:
+              "When true, pass --tags.",
+          },
+        },
+        additionalProperties: false,
+      },
+      validateInput: validateGitFetchInput,
+      buildArgs: buildGitFetchArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitPullTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitPullInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.pull",
+      operation: "pull",
+      description:
+        "Pull Git changes using git pull through Orqent's controlled CLI adapter. Mutates the working tree and may use network access. Defaults to --ff-only. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          remote: {
+            type: "string",
+            description:
+              "Optional remote name. Defaults to Git's configured default.",
+          },
+          branch: {
+            type: "string",
+            description:
+              "Optional branch/ref to pull.",
+          },
+          rebase: {
+            type: "boolean",
+            description:
+              "When true, pass --rebase. Defaults to false.",
+          },
+          ffOnly: {
+            type: "boolean",
+            description:
+              "When true, pass --ff-only unless rebase=true. Defaults to true.",
+          },
+        },
+        additionalProperties: false,
+      },
+      validateInput: validateGitPullInput,
+      buildArgs: buildGitPullArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitCheckoutTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitCheckoutInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.checkout",
+      operation: "checkout",
+      description:
+        "Checkout a Git branch, commit, or tag using git checkout through Orqent's controlled CLI adapter. Mutates HEAD and may modify the working tree. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            description:
+              "Branch, commit, or tag to checkout. Must not start with '-'.",
+          },
+          createBranch: {
+            type: "string",
+            description:
+              "Optional new branch name. When provided, runs git checkout -b <createBranch> <target>.",
+          },
+          detach: {
+            type: "boolean",
+            description:
+              "When true, runs git checkout --detach <target>.",
+          },
+        },
+        required: [ "target" ],
+        additionalProperties: false,
+      },
+      validateInput: validateGitCheckoutInput,
+      buildArgs: buildGitCheckoutArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitSwitchTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitSwitchInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.switch",
+      operation: "switch",
+      description:
+        "Switch Git branches using git switch through Orqent's controlled CLI adapter. Mutates HEAD and may modify the working tree. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          branch: {
+            type: "string",
+            description:
+              "Branch name to switch to. Must not start with '-'.",
+          },
+          create: {
+            type: "boolean",
+            description:
+              "When true, pass --create.",
+          },
+          track: {
+            type: "boolean",
+            description:
+              "When true, pass --track.",
+          },
+        },
+        required: [ "branch" ],
+        additionalProperties: false,
+      },
+      validateInput: validateGitSwitchInput,
+      buildArgs: buildGitSwitchArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitAddTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitAddInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.add",
+      operation: "add",
+      description:
+        "Stage files using git add through Orqent's controlled CLI adapter. Mutates the Git index. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          paths: {
+            type: "array",
+            items: {
+              type: "string",
+            },
+            description:
+              "Paths to stage. Use [\".\"] to stage the current directory.",
+          },
+        },
+        required: [ "paths" ],
+        additionalProperties: false,
+      },
+      validateInput: validateGitAddInput,
+      buildArgs: buildGitAddArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitCommitTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitCommitInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.commit",
+      operation: "commit",
+      description:
+        "Create a Git commit using git commit -m through Orqent's controlled CLI adapter. Mutates repository history locally. Requires confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            description:
+              "Commit message. Can contain multiple lines.",
+          },
+          allowEmpty: {
+            type: "boolean",
+            description:
+              "When true, pass --allow-empty.",
+          },
+        },
+        required: [ "message" ],
+        additionalProperties: false,
+      },
+      validateInput: validateGitCommitInput,
+      buildArgs: buildGitCommitArgs,
+    },
+    runCommand,
+  );
+}
+
+export function createGitPushTool(
+  runCommand: GitCliCommandRunner = executeCliCommand,
+): ToolDefinition<GitPushInput, GitMutatingResult> {
+  return createGitMutatingTool(
+    {
+      name: "git.push",
+      operation: "push",
+      description:
+        "Push Git commits using git push through Orqent's controlled CLI adapter. Uses network access and mutates remote repository state. Requires confirmation. Supports --force-with-lease but intentionally does not expose raw --force.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          remote: {
+            type: "string",
+            description:
+              "Optional remote name, for example origin. Required when branch is provided.",
+          },
+          branch: {
+            type: "string",
+            description:
+              "Optional branch/ref to push. Requires remote when provided.",
+          },
+          setUpstream: {
+            type: "boolean",
+            description:
+              "When true, pass --set-upstream. Requires both remote and branch.",
+          },
+          forceWithLease: {
+            type: "boolean",
+            description:
+              "When true, pass --force-with-lease. Raw --force is intentionally unsupported.",
+          },
+        },
+        additionalProperties: false,
+      },
+      validateInput: validateGitPushInput,
+      buildArgs: buildGitPushArgs,
+    },
+    runCommand,
+  );
+}
+
 export const gitStatusTool = createGitStatusTool();
 export const gitDiffTool = createGitDiffTool();
 export const gitLogTool = createGitLogTool();
 export const gitBranchTool = createGitBranchTool();
 export const gitShowTool = createGitShowTool();
 export const gitRemotesTool = createGitRemotesTool();
+export const gitCloneTool = createGitCloneTool();
+export const gitFetchTool = createGitFetchTool();
+export const gitPullTool = createGitPullTool();
+export const gitCheckoutTool = createGitCheckoutTool();
+export const gitSwitchTool = createGitSwitchTool();
+export const gitAddTool = createGitAddTool();
+export const gitCommitTool = createGitCommitTool();
+export const gitPushTool = createGitPushTool();

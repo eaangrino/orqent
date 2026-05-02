@@ -24,12 +24,20 @@ import {
   dockerExecTool,
 } from "./builtin/docker.js";
 import {
+  gitAddTool,
   gitBranchTool,
+  gitCheckoutTool,
+  gitCloneTool,
+  gitCommitTool,
   gitDiffTool,
+  gitFetchTool,
   gitLogTool,
+  gitPullTool,
+  gitPushTool,
   gitRemotesTool,
   gitShowTool,
   gitStatusTool,
+  gitSwitchTool,
 } from "./builtin/git.js";
 import type { AnyToolDefinition } from "./types.js";
 import {
@@ -133,6 +141,14 @@ export const builtinTools: AnyToolDefinition[] = [
   gitBranchTool,
   gitShowTool,
   gitRemotesTool,
+  gitCloneTool,
+  gitFetchTool,
+  gitPullTool,
+  gitCheckoutTool,
+  gitSwitchTool,
+  gitAddTool,
+  gitCommitTool,
+  gitPushTool,
   searchRgTool,
   searchFindTool,
   agentCreateDefinitionTool,
