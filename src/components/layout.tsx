@@ -1,52 +1,75 @@
 import { type ReactNode } from "react";
-import { Box, Text } from "ink";
-import { Menu } from "./menu.js";
+import { Box, Text, useWindowSize } from "ink";
 
 type LayoutProps = {
-  title: string;
-  instructions: string;
-  menuItems: string[];
-  selectedIndex: number;
-  activeLabel: string;
-  footerHelp: readonly string[];
+  topLeftText: string;
+  topRightText: string;
+  footerLineA: string;
+  footerLineB: string;
+  footerLineBRightText: string;
+  hideBrand?: boolean;
   children: ReactNode;
 };
 
+const logoLines = [
+  " .88888.                                        dP   ",
+  "d8'   `8b                                       88   ",
+  "88     88 88d888b. .d8888b. .d8888b. 88d888b. d8888P ",
+  "88     88 88'  `88 88'  `88 88ooood8 88'  `88   88   ",
+  "Y8.   .8P 88       88.  .88 88.  ... 88    88   88   ",
+  " `8888P'  dP       `8888P88 `88888P' dP    dP   dP   ",
+  "                         88                          ",
+  "                         dP                          ",
+];
+
 export function Layout({
-  title,
-  instructions,
-  menuItems,
-  selectedIndex,
-  activeLabel,
-  footerHelp,
+  topLeftText,
+  topRightText,
+  footerLineA,
+  footerLineB,
+  footerLineBRightText,
+  hideBrand = false,
   children,
 }: LayoutProps) {
+  const { columns } = useWindowSize();
+
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box flexDirection="column" borderStyle="round" paddingX={1} paddingY={0}>
-        <Text color="green">{title}</Text>
-        <Text>{instructions}</Text>
-      </Box>
-
-      <Menu items={menuItems} selectedIndex={selectedIndex} />
-
-      <Box marginTop={1} borderStyle="round" paddingX={1}>
-        <Text>
-          Vista activa: <Text color="cyan">{activeLabel}</Text>
-        </Text>
+    <Box flexDirection="column" width={columns} paddingX={2} paddingY={1}>
+      <Box justifyContent="space-between">
+        <Text dimColor>{topLeftText}</Text>
+        <Text dimColor>{topRightText}</Text>
       </Box>
 
       <Box
-        marginTop={1}
         flexDirection="column"
-        borderStyle="round"
-        paddingX={1}
-        paddingY={0}>
-        {children}
+        justifyContent={hideBrand ? "flex-start" : "center"}
+        alignItems="center">
+        {!hideBrand ? (
+          <>
+            {logoLines.map((line) => (
+              <Text key={line} color="#FF8549">
+                {line}
+              </Text>
+            ))}
+          </>
+        ) : null}
+
+        <Box
+          marginTop={hideBrand ? 0 : 1}
+          flexDirection="column"
+          alignItems="center"
+          width="100%">
+          {children}
+        </Box>
       </Box>
 
-      <Box marginTop={1}>
-        <Text dimColor>{footerHelp.join(" • ")}</Text>
+      <Box flexDirection="column">
+        <Text dimColor>{footerLineA}</Text>
+
+        <Box justifyContent="space-between">
+          <Text dimColor>{footerLineB}</Text>
+          <Text dimColor>{footerLineBRightText}</Text>
+        </Box>
       </Box>
     </Box>
   );

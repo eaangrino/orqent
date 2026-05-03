@@ -1,4 +1,9 @@
-# Orqent
+> [!WARNING]
+> This project is in an early stage and is likely to have bugs or unstable behavior. It is a practice hobby project focused on learning and understanding how to run a model locally and have it control tools according to their specifications.
+
+<p align="center">
+  <img src="./src/assets/cover_logo.svg" alt="Logo del proyecto" width="620" />
+</p>
 
 **Orqent** is a local, controllable, and extensible agent runtime built in **TypeScript**, designed for terminal/TUI usage, with **Gemma 4** running on **Ollama** as the base model engine.
 
