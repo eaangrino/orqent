@@ -1,127 +1,30 @@
-export type ToolRiskLevel = "safe" | "low" | "medium" | "high" | "critical";
+import type { PermissionMode } from "../config.js";
+import type { JsonSchema, ResponseFunctionTool } from "../agent/protocol.js";
 
-export type ToolPermission =
-  | "filesystem:read"
-  | "filesystem:write"
-  | "shell:execute"
-  | "project:search"
-  | "agents:read"
-  | "agents:write"
-  | "mcp:read"
-  | "mcp:write"
-  | "skills:read"
-  | "skills:write";
+export type ToolRisk = "read" | "write" | "execute";
 
-export type ToolJsonSchema = {
-  type: "object";
-  properties?: Record<string, unknown>;
-  required?: string[];
-  additionalProperties?: boolean;
-};
-
-export type ToolRuntimeContext = {
-  ollamaHost?: string;
-  activeModel?: string | null;
-  generationOptions?: unknown;
-  thinkingMode?: unknown;
-};
-
-export type ToolExecutionContext = {
-  sessionId: string;
-  cwd: string;
+export type ToolContext = {
+  rootDir: string;
+  permissionMode: PermissionMode;
   signal: AbortSignal;
-  runtime?: ToolRuntimeContext;
-};
-
-export type ToolExecutionProfile = {
-  risk?: ToolRiskLevel;
-  permissions?: ToolPermission[];
-  requiresConfirmation?: boolean;
-  isReadOnly?: boolean;
-};
-
-export type ToolRetryConfig = {
-  maxAttempts: number;
-  delayMs: number;
-  retryableErrorCodes?: string[];
+  maxOutputBytes: number;
+  confirm: (request: ToolConfirmationRequest) => Promise<boolean>;
 };
 
 export type ToolConfirmationRequest = {
-  toolName: string;
-  input: unknown;
-  risk: ToolRiskLevel;
-  permissions: ToolPermission[];
-  reason: string;
+  name: string;
+  description: string;
+  risk: ToolRisk;
+  arguments: unknown;
 };
 
-export type ToolConfirmationDecision =
-  | {
-    allowed: true;
-  }
-  | {
-    allowed: false;
-    reason?: string;
-  };
-
-export type ToolConfirmationHandler = (
-  request: ToolConfirmationRequest,
-) => Promise<ToolConfirmationDecision>;
-
-export type ToolActionStatus =
-  | "tool_not_found"
-  | "invalid_input"
-  | "permission_denied"
-  | "confirmation_required"
-  | "confirmation_denied"
-  | "executed";
-
-export type ToolConfirmationOutcome =
-  | "not_required"
-  | "missing"
-  | "allowed"
-  | "denied";
-
-export type ToolActionLogEntry = {
-  sessionId: string;
-  toolName: string;
-  cwd: string;
-  input: unknown;
-  status: ToolActionStatus;
-  ok: boolean;
-  durationMs: number;
-  risk?: ToolRiskLevel;
-  permissions?: ToolPermission[];
-  requiresConfirmation?: boolean;
-  isReadOnly?: boolean;
-  permissionEffect?: "allow" | "ask" | "deny";
-  permissionReason?: string;
-  confirmation?: ToolConfirmationOutcome;
-  errorCode?: string;
-  errorMessage?: string;
-  metadata?: Record<string, unknown>;
-};
-
-export type ToolActionLogger = (
-  entry: ToolActionLogEntry,
-) => void | Promise<void>;
-
-export type ToolValidationResult<TInput> =
-  | {
-    ok: true;
-    input: TInput;
-  }
-  | {
-    ok: false;
-    error: string;
-  };
-
-export type ToolExecutionOk<TResult = unknown> = {
+export type ToolSuccess = {
   ok: true;
-  result: TResult;
+  data: unknown;
   metadata?: Record<string, unknown>;
 };
 
-export type ToolExecutionError = {
+export type ToolFailure = {
   ok: false;
   error: {
     code: string;
@@ -131,30 +34,39 @@ export type ToolExecutionError = {
   metadata?: Record<string, unknown>;
 };
 
-export type ToolExecutionResult<TResult = unknown> =
-  | ToolExecutionOk<TResult>
-  | ToolExecutionError;
+export type ToolResult = ToolSuccess | ToolFailure;
 
-export type AnyToolDefinition = ToolDefinition<any, any>;
-
-export type ToolDefinition<TInput = Record<string, unknown>, TResult = unknown> = {
+export type ToolDefinition<TArgs = unknown> = {
   name: string;
   description: string;
-  inputSchema: ToolJsonSchema;
-
-  risk: ToolRiskLevel;
-  permissions: ToolPermission[];
-  requiresConfirmation: boolean;
-  isReadOnly: boolean;
-
-  timeoutMs?: number;
-  retry?: ToolRetryConfig;
-
-  validateInput?: (input: unknown) => ToolValidationResult<TInput>;
-  getExecutionProfile?: (input: TInput) => ToolExecutionProfile;
-
-  execute: (
-    input: TInput,
-    context: ToolExecutionContext,
-  ) => Promise<ToolExecutionResult<TResult>>;
+  parameters: JsonSchema;
+  risk: ToolRisk;
+  parse: (value: unknown) => TArgs;
+  execute: (args: TArgs, context: ToolContext) => Promise<ToolResult>;
 };
+
+export type AnyToolDefinition = ToolDefinition<any>;
+
+export function toResponseTool(
+  tool: AnyToolDefinition,
+  strict: boolean,
+): ResponseFunctionTool {
+  return {
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+    strict,
+  };
+}
+
+export function toolError(
+  code: string,
+  message: string,
+  details?: unknown,
+): ToolFailure {
+  return {
+    ok: false,
+    error: details === undefined ? { code, message } : { code, message, details },
+  };
+}

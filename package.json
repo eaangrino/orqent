@@ -1,45 +1,36 @@
 {
-  "name": "orqent",
-  "version": "1.0.0",
-  "description": "TUI con React + Ink + TypeScript",
+  "name": "orqent-openai-sdk",
+  "version": "2.0.1",
+  "description": "Agente local para Ollama usando exclusivamente el SDK oficial de OpenAI y Responses API function tools.",
   "type": "module",
-  "main": "dist/index.js",
+  "private": true,
   "bin": {
-    "orqent": "./dist/index.js"
+    "orqent": "./dist/src/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "dev": "tsx watch src/index.tsx",
-    "start": "tsx src/index.tsx",
-    "typecheck": "tsc --noEmit",
-    "build": "tsup src/index.tsx --format esm --target node20 --out-dir dist --clean",
-    "cli": "node dist/index.js",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "test": "pnpm build && node --test dist/test/*.test.js",
+    "check": "pnpm test"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=11.20.0 <12"
+  },
+  "packageManager": "pnpm@11.20.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "chalk": "^5.6.2",
-    "ink": "^7.0.1",
-    "ink-text-input": "^6.0.0",
-    "meow": "^14.1.0",
-    "ollama": "^0.6.3",
-    "react": "^19.2.5",
-    "zod": "^4.4.1"
+    "openai": "7.4.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
-    "@types/react": "^19.2.14",
-    "@vitest/coverage-v8": "^4.1.5",
-    "tsup": "^8.0.0",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
-  }
+    "@types/node": "24.13.2",
+    "tsx": "4.23.5",
+    "typescript": "7.0.2"
+  },
+  "license": "MIT"
 }

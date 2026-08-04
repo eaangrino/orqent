@@ -1,6 +1,6 @@
-dist
-coverage
-node_modules
-.git
-.orqent
-*.txt
+node_modules/
+dist/
+.env
+.orqent/
+*.log
+.DS_Store
