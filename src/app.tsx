@@ -20,6 +20,7 @@ import {
   parseModelToolCall,
   planContextUsage,
   streamChatFromOllama,
+  dumpOllamaChatPayload,
   type OllamaChatMessage,
 } from "./runtime/index.js";
 import {
@@ -634,16 +635,31 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
 
         while (true) {
           let streamedResponse = "";
+          const ollamaMessages: OllamaChatMessage[] = [
+            {
+              role: "system",
+              content: effectiveSystemPrompt,
+            },
+            ...modelMessages,
+          ];
+
+          const debugPromptPath = await dumpOllamaChatPayload({
+            sessionId,
+            model: activeModel,
+            cwd: process.cwd(),
+            messages: ollamaMessages,
+            generationOptions,
+            thinkingMode,
+          });
+
+          if (debugPromptPath) {
+            updatePromptStatus(`Debug prompt dumped: ${debugPromptPath}`);
+          }
+
           const result = await streamChatFromOllama({
             host: ollamaHost,
             model: activeModel,
-            messages: [
-              {
-                role: "system",
-                content: effectiveSystemPrompt,
-              },
-              ...modelMessages,
-            ],
+            messages: ollamaMessages,
             generationOptions,
             thinkingMode,
             onToken: (token) => {
@@ -714,6 +730,13 @@ export function App({ resumeSessionId, onSessionReady, onExit }: AppProps) {
               allowSurroundingText: true,
             },
           });
+
+          if (process.env.ORQENT_DEBUG_PROMPTS === "1") {
+            console.error("\n[orqent debug] raw model response:");
+            console.error(result.response);
+            console.error("\n[orqent debug] parsed tool call:");
+            console.error(JSON.stringify(toolExecution, null, 2));
+          }
 
           lastToolExecution = toolExecution;
 
